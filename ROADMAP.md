@@ -1,133 +1,89 @@
-# CodingAgent Roadmap & Architecture
+# ruid (`@theruid/ruid`) Roadmap & Architecture
 
-This document outlines the current state of CodingAgent, key architectural decisions, and the phased development roadmap.
-
----
-
-## 1. Implemented Features & Architecture
-
-### Core Agent Engine
-- **Agent Loop (`src/agent/loop.ts`)**:
-  - Full multi-turn loop supporting streaming text deltas, tool calls, tool results, and usage tracking.
-  - Turn iteration cap protection (defaults to 40 max iterations) with automated wrap-up prompts.
-  - Empty response detection with auto-nudge recovery.
-  - Conversation history accumulation with message serialization.
-- **System Prompt (`src/agent/systemPrompt.ts`)**:
-  - Contextual workspace path, host platform (`win32`, `linux`, `darwin`), search-first instructions, precision editing guidelines, and relative path resolution rules.
-
-### Provider Abstraction Layer
-- **Unified Provider Interface (`src/providers/types.ts`)**:
-  - Common `LLMProvider` contract with async generator streaming (`StreamEvent`).
-  - Standardized message formats (`LLMMessage`, `AssistantContent`, `ToolResult`).
-  - SSE line parsing stream helper (`sseDataLines`).
-- **Anthropic Adapter (`src/providers/anthropic.ts`)**:
-  - Native Anthropic Messages API v1 streaming integration.
-  - Tool calling protocol translation (`tool_use` / `tool_result`).
-  - Streaming token usage accumulation.
-- **OpenAI-Compatible Adapter (`src/providers/openai.ts`)**:
-  - Universal `/chat/completions` client supporting DeepSeek, Groq, OpenRouter, Ollama, LM Studio, vLLM, and OpenAI.
-  - Streaming tool arguments stitching across chunks.
-  - Reasoning tokens extraction (`reasoning_content` / `reasoning`).
-  - Live model discovery (`listModels()` against `/models`).
-
-### Sandboxed Tooling
-- **Filesystem Tools (`src/tools/fs.ts`)**:
-  - `Workspace` path sandbox: path normalization, cross-platform root boundary enforcement, and path traversal block.
-  - `read_file`: Line-offset/limit pagination, 512KB limit, and binary NUL-byte detection.
-  - `write_file`: Recursive parent directory creation and file generation.
-  - `edit_file`: Exact string replacement with context checking and `replace_all` support.
-  - `list_dir`: Alphabetic sorting (directories grouped first) and empty directory handling.
-  - `glob`: Built-in Node glob search capped at 200 items.
-- **Search Tools (`src/tools/search.ts`)**:
-  - `grep`: Regex-based fast search, ignore directory filtering (`node_modules`, `.git`, `dist`, `.cache`, etc.), extension filtering, binary sniffing, and match count capping.
-- **Execution Tools (`src/tools/bash.ts`)**:
-  - `bash`: Platform-aware command execution (`cmd.exe` on Windows, `/bin/sh` on Unix), output truncation (200KB limit), color stripping (`FORCE_COLOR=0`), and configurable timeout handling.
-- **Tool Registry & Validation (`src/tools/registry.ts`)**:
-  - Zod schema validation on tool inputs.
-  - Structured JSON Schema export for LLM tool declarations.
-  - Unified tool dispatching with standardized error formatting.
-
-### Security & Permission System
-- **Deferred Permissions (`src/permissions.ts`)**:
-  - Promise-parking permission manager awaiting user interactive response.
-  - Auto-approval set for read-only tools (`read_file`, `list_dir`, `glob`, `grep`).
-  - Session-level whitelist escalation (`a` = allow for session).
-  - Explicit user rejection forwarding to the model as an actionable error.
-
-### Terminal UI (Ink / React)
-- **State Store (`src/ui/store.ts`)**:
-  - Observable store subscribing React components via `useSyncExternalStore`.
-  - Stream delta batching (40ms timer) to prevent terminal flickering.
-  - Live token usage and cost calculation matrix (`src/ui/utils/pricing.ts`).
-- **Interactive Components**:
-  - `App.tsx`: Fullscreen alternate screen buffer (`\x1b[?1049h`), dynamic terminal resize tracking, and global key routing.
-  - `MessageList.tsx`: Virtualized scrollback viewport with PageUp/PageDown/Ctrl+Arrow scrolling.
-  - `InputBox.tsx`: Single/multi-line prompt input with command detection.
-  - `PermissionPrompt.tsx`: Inline permission prompt with visual diff preview for edits/writes and shell command inspection.
-  - `StatusBar.tsx`: Active provider/model, connection state, turn counter, session token usage, USD cost, and latency meter.
-  - `SetupWizard.tsx` & `Welcome.tsx`: First-time setup onboarding with live endpoint querying.
-  - `SessionPicker.tsx`: Interactive session browser and resume picker.
-  - `CommandPalette.tsx`: Interactive slash command modal.
-- **Formatting Utilities**:
-  - `markdown.ts`: Terminal markdown rendering.
-  - `syntax.ts`: Syntax highlighting for code fences.
-  - `diff.ts`: Unified diff computation with context lines.
-  - `toolSummary.ts`: Formatted badge displays for active/completed tool executions.
-
-### Session Management & Configuration
-- **Sessions (`src/sessions.ts`)**:
-  - Local JSON storage under `~/.codingagent/sessions/`.
-  - Autosaving after every turn, title generation from initial user prompt, session loading, and cleanup.
-- **Config (`src/config.ts`, `src/configWizard.ts`)**:
-  - Global configuration storage at `~/.codingagent/config.json`.
-  - Provider registration, default model selection, permission overrides, and usability validation.
+This document tracks the current development status, completed milestones, and upcoming capabilities for `ruid`.
 
 ---
 
-## 2. Phased Roadmap
+## 1. Status Overview
 
-### Phase 1: Robustness & Context Management (Completed)
-1. **Node 20 Compatible Fast Glob Engine**:
-   - Zero-dependency recursive file walker with glob matching supporting Node >= 20 (fixing the runtime dependency on Node 22 `fs.globSync`).
-2. **Robust Error Recovery & Provider Retries**:
-   - Exponential backoff with jitter for HTTP rate limits (`429`) and server errors (`500`, `502`, `503`, `529`).
-   - Graceful connection drop detection and friendly error reporting.
-3. **Context Window Pruning & Compaction**:
-   - Token budget estimation and management per turn.
-   - Compact older large tool results into summary notes to avoid blowing context windows.
-   - Sliding-window strategy for long-running multi-turn agent conversations.
+```
+                                MILESTONE STATUS
+ ┌───────────────────────────────────────────────────────────────────┬────────────┐
+ │ Phase 1: Robustness, Context Management & Provider Resilience     │  COMPLETE  │
+ ├───────────────────────────────────────────────────────────────────┼────────────┤
+ │ Phase 2: Native Tooling, Git & Task Management                    │  COMPLETE  │
+ ├───────────────────────────────────────────────────────────────────┼────────────┤
+ │ Phase 3: Developer Experience, Modes, Rollback & Autocomplete     │  COMPLETE  │
+ ├───────────────────────────────────────────────────────────────────┼────────────┤
+ │ Phase 4.1: Sub-Agent Swarm Delegation Engine (Parallel Execution) │  COMPLETE  │
+ ├───────────────────────────────────────────────────────────────────┼────────────┤
+ │ Self-Update: In-place NPM Registry Auto-Updater & Semver Engine   │  COMPLETE  │
+ ├───────────────────────────────────────────────────────────────────┼────────────┤
+ │ Phase 4.2: Model Context Protocol (MCP) Client                    │  UPCOMING  │
+ ├───────────────────────────────────────────────────────────────────┼────────────┤
+ │ Phase 5: Web Search & External Docs Lookup                        │  UPCOMING  │
+ └───────────────────────────────────────────────────────────────────┴────────────┘
+```
 
-### Phase 2: Tooling & Coding Agent Capabilities (Completed)
-1. **Project Rules & Instruction Auto-loading**:
-   - Auto-detect `AGENT.md`, `CLAUDE.md`, `.agentrules`, `CODINGAGENT.md` in workspace and load them into the system prompt.
-2. **Native Git Integration**:
-   - `git_status`, `git_diff`, `git_log` built-in read-only tools with auto-approval and UI summary badges.
-3. **Task & Step Checklist Management**:
-   - `task_create`, `task_update`, and `task_list` tools for managing structured multi-step refactoring workflows.
-4. **Test & Diagnostic Runner**:
-   - Shell-based test runners with output inspection.
+---
 
-### Phase 3: Developer Experience & TUI Enhancements (Completed)
-1. **Interactive Agent Modes & Tab Cycling**:
-   - `code` (safe default with permissions), `plan` (read-only architecture planning), and `auto` (autonomous execution with pre-granted permissions).
-   - Pressing **`Tab`** cycles between modes; `/mode <code|plan|auto>` allows explicit switching.
-   - Status bar mode badge (`[CODE]`, `[PLAN]`, `[AUTO]`).
-2. **Live TaskPanel UI Component**:
-   - Real-time plan checklist rendering with state indicators (`✓`, `⠋`, `○`).
-   - Syncs automatically across turns when agent invokes `task_create` and `task_update`.
-3. **Multi-line Input Support**:
-   - `Shift+Enter` inserts newlines in `InputBox` while Enter submits.
-4. **`@` File Mention & Fuzzy Autocomplete**:
-   - Type `@` to open the file picker popup (`FilePalette.tsx`) with real-time fuzzy search.
-   - Automatically attaches mentioned file contents directly into the prompt context.
-5. **Turn Snapshot & `/rollback` Engine**:
-   - `SnapshotManager` captures file state before mutations.
-   - `/rollback` command and `rollback` tool safely revert all modified and created files back to their pre-turn state without Git dependencies.
+## 2. Completed Milestones
 
-### Phase 4: Sub-Agents & Extensibility (In Progress)
-1. **Sub-Agent Swarm Delegation Engine**:
-   - `subagent_spawn` tool allowing the orchestrator to delegate research, coding, or reviews to specialized sub-agents.
-   - Built-in roles: `explore` (read-only search), `coder` (isolated implementation), `reviewer` (adversarial testing/diff checks), `general`.
-   - Complete context isolation: child loop intermediate tool logs never pollute parent conversation context.
-2. **Model Context Protocol (MCP) Client (Upcoming)**:
-   - Connect to standard MCP servers over stdio/SSE to dynamically import external tools.
+### Phase 1: Robustness & Context Management
+- [x] **Zero-Dependency Glob Engine**: Node >= 20 compatible recursive file walker with regex matching (no Node 22 `globSync` lock-in).
+- [x] **Provider Resilience & Retries**: `fetchWithRetry` with exponential backoff and jitter for transient errors (`429`, `500`, `502`, `503`, `529`).
+- [x] **Context Window Pruning**: Automated token estimation and large tool result compaction to keep multi-turn conversations inside context bounds.
+
+### Phase 2: Tooling & Coding Capabilities
+- [x] **Project Rules Auto-Loader**: Detects and injects `AGENT.md`, `CLAUDE.md`, `.agentrules`, `CODINGAGENT.md` into the system prompt.
+- [x] **Native Git Tools**: `git_status`, `git_diff`, `git_log` with automatic output caps (100KB).
+- [x] **Task & Checklist Engine**: `task_create`, `task_update`, `task_list` tracking step-by-step progress.
+
+### Phase 3: Developer Experience & TUI Enhancements
+- [x] **Operating Modes**: `[CODE]` (safe default with permissions), `[PLAN]` (read-only architecture), `[AUTO]` (autonomous bypass).
+- [x] **Tab Key Mode Cycling**: Press `Tab` in the empty prompt to switch modes on the fly.
+- [x] **Live TaskPanel UI**: Dynamic checklist rendering real-time states (`✓`, `⠋`, `○`).
+- [x] **Multi-line Input**: `Ctrl+Enter`, `Alt+Enter`, `Shift+Enter`, and trailing `\` for multi-line drafting.
+- [x] **`@` File Mention & Fuzzy Search**: Workspace file indexing popup that auto-attaches file contents into the prompt.
+- [x] **Turn Snapshots & `/rollback`**: File mutation checkpoints allowing instant rollback and prompt restoration without Git dependency.
+
+### Phase 4.1: Sub-Agent Swarm Engine
+- [x] **`subagent_spawn` Tool**: Orchestrator spawns isolated worker agents for research, coding, or adversarial reviews.
+- [x] **Context Isolation**: Child tool executions stay in the worker sandbox and never bloat parent tokens.
+- [x] **Parallel Execution**: Multiple sub-agents run concurrently via `Promise.all` with deadlock-safe sequential permission resolution.
+- [x] **Ctrl+C Abort Propagation**: `AbortSignal` forwarded through sub-agent loops for clean cancellation without UI hangs.
+- [x] **Reasoning Stream Separation**: `reasoning_content` isolated from the final answer stream for clean first-person responses.
+
+### Self-Update Engine
+- [x] **NPM Registry Checker**: Fast 2-second semver check on startup.
+- [x] **Interactive UpdatePrompt**: One-click in-place `npm install -g @theruid/ruid@latest` with restart notifications.
+
+---
+
+## 3. What's Left to Implement
+
+### Next Immediate Priority: Phase 4.2 — Model Context Protocol (MCP) Client
+- [ ] **Config-Driven MCP Servers**:
+  - Support `~/.ruid/config.json` or `.ruid/mcp.json` defining external MCP server connections:
+    ```json
+    {
+      "mcpServers": {
+        "postgres": { "command": "npx", "args": ["-y", "@modelcontextprotocol/server-postgres", "postgresql://localhost/db"] },
+        "github": { "command": "npx", "args": ["-y", "@modelcontextprotocol/server-github"] }
+      }
+    }
+    ```
+- [ ] **Stdio JSON-RPC 2.0 Client**:
+  - Spawn server processes, perform handshake (`initialize`), list tools (`tools/list`), and dynamically mount them into `buildRegistry()`.
+- [ ] **MCP Tool Dispatch & Permissions**:
+  - Route tool calls through `tools/call`, honoring active `CODE`/`PLAN`/`AUTO` permission policies.
+
+---
+
+### Future Enhancements: Phase 5 & Beyond
+- [ ] **Web Search & Documentation Lookup**:
+  - Built-in safe web search tool (Brave Search / DuckDuckGo / Tavily) for querying current library documentation.
+- [ ] **Custom Provider Presets**:
+  - Add quick setup presets in `/setup` for GitHub Models, OpenRouter, Together AI, and vLLM.
+- [ ] **Session Search & History Filter**:
+  - Full-text search across past session transcripts in `/resume`.
