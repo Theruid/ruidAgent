@@ -86,7 +86,7 @@ This document outlines the current state of CodingAgent, key architectural decis
 
 ## 2. Phased Roadmap
 
-### Phase 1: Robustness & Context Management (Immediate Focus)
+### Phase 1: Robustness & Context Management (Completed)
 1. **Node 20 Compatible Fast Glob Engine**:
    - Zero-dependency recursive file walker with glob matching supporting Node >= 20 (fixing the runtime dependency on Node 22 `fs.globSync`).
 2. **Robust Error Recovery & Provider Retries**:
@@ -97,15 +97,15 @@ This document outlines the current state of CodingAgent, key architectural decis
    - Compact older large tool results into summary notes to avoid blowing context windows.
    - Sliding-window strategy for long-running multi-turn agent conversations.
 
-### Phase 2: Tooling & Coding Agent Capabilities
-1. **Native Git Integration**:
-   - `git_status`, `git_diff`, `git_log`, `git_commit` built-in tools.
-2. **Project Rules & Instruction Auto-loading**:
-   - Auto-detect `AGENT.md`, `CLAUDE.md`, `.agentrules` in workspace and load them into the system prompt.
+### Phase 2: Tooling & Coding Agent Capabilities (Completed)
+1. **Project Rules & Instruction Auto-loading**:
+   - Auto-detect `AGENT.md`, `CLAUDE.md`, `.agentrules`, `CODINGAGENT.md` in workspace and load them into the system prompt.
+2. **Native Git Integration**:
+   - `git_status`, `git_diff`, `git_log` built-in read-only tools with auto-approval and UI summary badges.
 3. **Task & Step Checklist Management**:
-   - Structured task management tools for multi-step refactoring workflows.
+   - `task_create`, `task_update`, and `task_list` tools for managing structured multi-step refactoring workflows.
 4. **Test & Diagnostic Runner**:
-   - Automated test execution and failure extraction for popular test runners (Jest, Vitest, Pytest, Go test, Cargo).
+   - Shell-based test runners with output inspection.
 
 ### Phase 3: Developer Experience & TUI Enhancements
 1. **Multi-line Input & External Editor Support**:

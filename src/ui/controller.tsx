@@ -23,7 +23,18 @@ export interface TuiOptions {
   resolveProvider?: () => { name: string; cfg: ProviderConfig; model: string | undefined };
 }
 
-const AUTO_APPROVE = new Set(["read_file", "list_dir", "glob", "grep"]);
+const AUTO_APPROVE = new Set([
+  "read_file",
+  "list_dir",
+  "glob",
+  "grep",
+  "git_status",
+  "git_diff",
+  "git_log",
+  "task_list",
+  "task_create",
+  "task_update",
+]);
 
 export function startTui(options: TuiOptions): void {
   const store = new AgentUIStore(

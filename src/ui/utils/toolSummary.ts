@@ -73,6 +73,50 @@ export function formatToolBadge(
       }
       break;
     }
+    case "git_status": {
+      target = "status";
+      if (resultText && !isError) {
+        meta = resultText.includes("(clean") ? "clean" : "changes";
+      }
+      break;
+    }
+    case "git_diff": {
+      target = inp.path ? String(inp.path) : inp.staged ? "staged" : "working tree";
+      if (resultText && !isError) {
+        const lineCount = resultText.split("\n").length;
+        meta = `${lineCount} lines`;
+      }
+      break;
+    }
+    case "git_log": {
+      target = `last ${inp.maxCount || 10} commits`;
+      if (resultText && !isError) {
+        const count = resultText.split("\n").filter((l) => l.trim()).length;
+        meta = `${count} commits`;
+      }
+      break;
+    }
+    case "task_create": {
+      target = String(inp.subject || "");
+      if (resultText && !isError) {
+        const match = resultText.match(/#(\d+)/);
+        meta = match ? `#${match[1]}` : "created";
+      }
+      break;
+    }
+    case "task_update": {
+      target = `#${inp.id} ${inp.status || ""}`.trim();
+      meta = isError ? "failed" : "updated";
+      break;
+    }
+    case "task_list": {
+      target = "tasks";
+      if (resultText && !isError) {
+        const count = resultText.split("\n").filter((l) => l.startsWith("#")).length;
+        meta = `${count} task${count === 1 ? "" : "s"}`;
+      }
+      break;
+    }
     default: {
       target = Object.values(inp)[0] ? String(Object.values(inp)[0]) : "";
       if (target.length > 40) target = target.slice(0, 38) + "…";

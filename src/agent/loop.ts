@@ -41,7 +41,20 @@ export async function runAgentLoop(options: LoopOptions): Promise<LLMMessage[]> 
   const registry = buildRegistry(ws);
   const permissions =
     options.permissions ??
-    createDeferredPermissions(new Set(["read_file", "list_dir", "glob", "grep"])).manager;
+    createDeferredPermissions(
+      new Set([
+        "read_file",
+        "list_dir",
+        "glob",
+        "grep",
+        "git_status",
+        "git_diff",
+        "git_log",
+        "task_list",
+        "task_create",
+        "task_update",
+      ])
+    ).manager;
   const maxIterations = options.maxIterations ?? 40;
   const maxContextTokens = options.maxContextTokens ?? 80_000;
 

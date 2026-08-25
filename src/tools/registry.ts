@@ -2,6 +2,8 @@ import type { z } from "zod";
 import { Workspace, readFileTool, writeFileTool, editFileTool, listDirTool, globTool } from "./fs.js";
 import { grepTool } from "./search.js";
 import { bashTool } from "./bash.js";
+import { gitStatusTool, gitDiffTool, gitLogTool } from "./git.js";
+import { TaskStore, taskCreateTool, taskUpdateTool, taskListTool } from "./tasks.js";
 import type { ToolDef } from "../providers/types.js";
 
 export interface AgentTool {
@@ -14,12 +16,18 @@ export interface AgentTool {
   requiresPermission: boolean;
 }
 
-export function buildRegistry(ws: Workspace): Map<string, AgentTool> {
+export function buildRegistry(ws: Workspace, taskStore = new TaskStore()): Map<string, AgentTool> {
   const tools: AgentTool[] = [
     { ...readFileTool(ws), requiresPermission: false },
     { ...listDirTool(ws), requiresPermission: false },
     { ...globTool(ws), requiresPermission: false },
     { ...grepTool(ws), requiresPermission: false },
+    { ...gitStatusTool(ws), requiresPermission: false },
+    { ...gitDiffTool(ws), requiresPermission: false },
+    { ...gitLogTool(ws), requiresPermission: false },
+    { ...taskListTool(taskStore), requiresPermission: false },
+    { ...taskCreateTool(taskStore), requiresPermission: false },
+    { ...taskUpdateTool(taskStore), requiresPermission: false },
     { ...writeFileTool(ws), requiresPermission: true },
     { ...editFileTool(ws), requiresPermission: true },
     { ...bashTool(ws), requiresPermission: true },
