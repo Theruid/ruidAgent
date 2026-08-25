@@ -10,6 +10,7 @@ import { SessionPicker } from "./components/SessionPicker.js";
 import { SetupWizard } from "./components/SetupWizard.js";
 import { TaskPanel } from "./components/TaskPanel.js";
 import { UpdatePrompt } from "./components/UpdatePrompt.js";
+import { performUpdate } from "../updater.js";
 
 /** Terminal dimensions with resize tracking. */
 function useTerminalDimensions(): { rows: number; columns: number } {
@@ -49,10 +50,40 @@ export function App({ store, onSubmit, onAbortTurn, onExit, onPickSession, onSet
   const state: UIState = useSyncExternalStore(store.subscribe, store.getState);
   const { rows, columns } = useTerminalDimensions();
   const exitIntent = useRef<number>(0);
+  const [updateStatus, setUpdateStatus] = useState<string | null>(null);
+  const updating = useRef(false);
 
   // Global key routing.
   useInput((input, key) => {
-    // 1. Permission Prompt handling
+    // 1. Update Prompt handling (when update is available)
+    if (state.updateInfo?.hasUpdate && !key.ctrl) {
+      if (updating.current) return;
+      const lower = input.toLowerCase().trim();
+      if (lower === "y") {
+        updating.current = true;
+        setUpdateStatus(`Updating ${state.updateInfo.packageName} via npm…`);
+        performUpdate(state.updateInfo.packageName).then((res) => {
+          if (res.success) {
+            setUpdateStatus(`✓ Updated to v${state.updateInfo?.latestVersion}! Please restart ruid.`);
+            setTimeout(() => {
+              store.setUpdateInfo(null);
+            }, 3500);
+          } else {
+            setUpdateStatus(`✖ Update failed: ${res.output.slice(0, 120)}`);
+            setTimeout(() => {
+              store.setUpdateInfo(null);
+            }, 4500);
+          }
+        });
+        return;
+      }
+      if (lower === "n" || lower === " " || key.escape || key.return) {
+        store.setUpdateInfo(null);
+        return;
+      }
+    }
+
+    // 2. Permission Prompt handling
     if (state.pendingPermission && store.respondPermission && !key.ctrl) {
       const lower = input.toLowerCase();
       if (lower === "y" || lower === "n" || lower === "a") {
@@ -61,7 +92,7 @@ export function App({ store, onSubmit, onAbortTurn, onExit, onPickSession, onSet
       }
     }
 
-    // 2. Global Scrolling Keys (PageUp / PageDown / Home / End)
+    // 3. Global Scrolling Keys (PageUp / PageDown / Home / End)
     if (key.pageUp) {
       store.scrollUp(Math.max(3, Math.floor(rows / 2)));
       return;
@@ -79,7 +110,7 @@ export function App({ store, onSubmit, onAbortTurn, onExit, onPickSession, onSet
       return;
     }
 
-    // 3. Ctrl+C handler
+    // 4. Ctrl+C handler
     if (key.ctrl && input === "c") {
       if (state.phase === "running") {
         onAbortTurn();
@@ -136,7 +167,7 @@ export function App({ store, onSubmit, onAbortTurn, onExit, onPickSession, onSet
       {state.tasks.length > 0 && <TaskPanel tasks={state.tasks} />}
 
       {state.updateInfo?.hasUpdate && (
-        <UpdatePrompt info={state.updateInfo} onDismiss={() => store.setUpdateInfo(null)} />
+        <UpdatePrompt info={state.updateInfo} status={updateStatus} />
       )}
 
       {state.notice && (

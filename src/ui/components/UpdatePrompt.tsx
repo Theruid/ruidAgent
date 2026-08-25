@@ -1,42 +1,14 @@
-import React, { useState } from "react";
-import { Box, Text, useInput } from "ink";
+import React from "react";
+import { Box, Text } from "ink";
 import type { UpdateInfo } from "../../updater.js";
-import { performUpdate } from "../../updater.js";
 
 export function UpdatePrompt({
   info,
-  onDismiss,
+  status,
 }: {
   info: UpdateInfo;
-  onDismiss: () => void;
+  status: string | null;
 }) {
-  const [updating, setUpdating] = useState(false);
-  const [status, setStatus] = useState<string | null>(null);
-
-  useInput((input) => {
-    if (updating) return;
-    const lower = input.toLowerCase().trim();
-    if (lower === "y") {
-      setUpdating(true);
-      setStatus(`Updating ${info.packageName} via npm…`);
-      performUpdate(info.packageName).then((res) => {
-        if (res.success) {
-          setStatus(`✓ Updated to v${info.latestVersion}! Please restart ruid.`);
-          setTimeout(() => {
-            onDismiss();
-          }, 3000);
-        } else {
-          setStatus(`✖ Update failed: ${res.output.slice(0, 120)}`);
-          setTimeout(() => {
-            onDismiss();
-          }, 4000);
-        }
-      });
-    } else if (lower === "n" || lower === " " || input === "\x1b" || input === "\r") {
-      onDismiss();
-    }
-  });
-
   return (
     <Box
       borderStyle="round"
