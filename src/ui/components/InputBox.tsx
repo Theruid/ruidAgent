@@ -144,15 +144,24 @@ export function InputBox({
         }
       }
 
-      // 4. Enter / Shift+Enter / Alt+Enter / Ctrl+Enter key
-      if (key.return) {
-        // Multi-line trigger: Shift+Enter, Alt+Enter, Ctrl+Enter, or trailing backslash \
+      // 4. Enter / Newline key handling (Enter, Ctrl+Enter, Shift+Enter, Alt+Enter, Ctrl+J)
+      const isReturnKey =
+        key.return ||
+        input === "\n" ||
+        input === "\r" ||
+        input === "\r\n" ||
+        input === "\x0a" ||
+        (key.ctrl && (input === "j" || input === "\n"));
+
+      if (isReturnKey) {
+        // Multi-line newline trigger
         const isMultiLine =
           key.shift ||
           key.meta ||
           key.ctrl ||
           input === "\n" ||
-          input === "\r\n" ||
+          input === "\x0a" ||
+          (key.ctrl && input === "j") ||
           value.endsWith("\\");
 
         if (isMultiLine) {
