@@ -156,9 +156,8 @@ export function InputBox({
           value.endsWith("\\");
 
         if (isMultiLine) {
-          // If ended with \, strip the backslash and add newline
-          const nextVal = value.endsWith("\\") ? value.slice(0, -1) + "\n" : value + "\n";
-          setValue(nextVal);
+          // If ended with \, strip the backslash and add a single newline
+          setValue((v) => (v.endsWith("\\") ? v.slice(0, -1) + "\n" : v + "\n"));
           return;
         }
 
@@ -264,12 +263,17 @@ export function InputBox({
         return;
       }
 
-      if (key.ctrl) return;
+      // Ignore other control/escape codes
+      if (key.ctrl || key.meta) return;
 
-      // Text entry
+      // Filter out raw newlines/carriage returns here since key.return handles them above
+      const printable = input.replace(/[\r\n\x00-\x08\x0b-\x1f\x7f]/g, "");
+      if (!printable) return;
+
+      // Regular text entry
       onScrollToBottom?.();
       setValue((v) => {
-        const next = v + input.replace(/\r/g, "");
+        const next = v + printable;
         if (next.startsWith("/") || next.includes("@")) setShowPalette(false);
         return next;
       });
@@ -301,13 +305,17 @@ export function InputBox({
             <Text dimColor>{placeholder}</Text>
           </Box>
         ) : (
-          lines.map((line, idx) => (
-            <Box key={idx}>
-              <Text dimColor>{idx === 0 ? "> " : "… "}</Text>
-              <Text wrap="wrap">{line}</Text>
-              {idx === lines.length - 1 && <Text dimColor>▌</Text>}
-            </Box>
-          ))
+          lines.map((line, idx) => {
+            const isLast = idx === lines.length - 1;
+            const prefix = idx === 0 ? "> " : "… ";
+            return (
+              <Box key={idx}>
+                <Text dimColor>{prefix}</Text>
+                <Text wrap="wrap">{line || " "}</Text>
+                {isLast && <Text dimColor>▌</Text>}
+              </Box>
+            );
+          })
         )}
       </Box>
     </Box>
