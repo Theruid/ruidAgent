@@ -1,12 +1,13 @@
 {
-  "name": "codingagent",
-  "version": "0.1.0",
+  "name": "@theruid/ruid",
+  "version": "0.1.5",
   "description": "Standalone CLI coding agent — works with any LLM provider",
   "type": "module",
   "engines": {
     "node": ">=20"
   },
   "bin": {
+    "ruid": "dist/index.js",
     "codingagent": "dist/index.js"
   },
   "scripts": {

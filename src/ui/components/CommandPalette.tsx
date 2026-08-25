@@ -20,7 +20,7 @@ export const COMMANDS: CommandItem[] = [
   { name: "/model", args: "<id>", description: "Switch active model or show current" },
   { name: "/clear", description: "Clear current conversation history" },
   { name: "/help", description: "Show available commands" },
-  { name: "/exit", description: "Exit codingagent" },
+  { name: "/exit", description: "Exit ruid" },
 ];
 
 export function CommandPalette({

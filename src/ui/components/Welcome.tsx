@@ -6,15 +6,15 @@ export function Welcome({ connected }: { connected: boolean }) {
     <Box flexDirection="column" alignItems="center" gap={1}>
       <Box flexDirection="column" alignItems="center">
         <Text bold color="cyan">
-          ◆ codingagent
+          ◆ ruid (@theruid/ruid)
         </Text>
         {!connected && (
           <Text dimColor>No provider configured yet — run /setup to connect one.</Text>
         )}
       </Box>
       <Box flexDirection="column" alignItems="center" marginTop={1}>
-        <Text dimColor>Type a message · /new new chat · /resume pick a session</Text>
-        <Text dimColor>/setup providers · /model switch model · /exit quit</Text>
+        <Text dimColor>Tab: cycle modes · @file: attach file · Ctrl+Enter: newline</Text>
+        <Text dimColor>/new: new chat · /tasks: plan · /rollback: undo · /exit: quit</Text>
       </Box>
     </Box>
   );

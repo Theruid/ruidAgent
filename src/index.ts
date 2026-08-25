@@ -42,12 +42,12 @@ function parseArgs(argv: string[]): CliArgs {
 }
 
 function printHelp(): void {
-  console.log(`codingagent — CLI coding agent that works with any LLM
+  console.log(`ruid (@theruid/ruid) — CLI coding agent that works with any LLM
 
 Usage:
-  codingagent                 Interactive REPL
-  codingagent -p "<prompt>"   One-shot mode (non-interactive)
-  codingagent setup           Interactive provider setup (add endpoints, keys, models)
+  ruid                 Interactive REPL
+  ruid -p "<prompt>"   One-shot mode (non-interactive)
+  ruid setup           Interactive provider setup (add endpoints, keys, models)
 
 Options:
   -p, --prompt <text>     Run a single prompt and exit
@@ -59,8 +59,7 @@ Options:
       --list-models       Query the endpoint's /models and print available model IDs
   -h, --help              Show this help
 
-Providers are configured in ~/.codingagent/config.json. --base-url/--api-key
-create an ad-hoc provider without touching config.`);
+Providers are configured in ~/.ruid/config.json (or ~/.codingagent/config.json).`);
 }
 
 export function createProvider(name: string, cfg: ProviderConfig): LLMProvider {

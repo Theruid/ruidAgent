@@ -5,6 +5,8 @@ import type { AgentTask } from "../tools/tasks.js";
 import { calculateCost } from "./utils/pricing.js";
 import { formatToolBadge } from "./utils/toolSummary.js";
 
+import type { UpdateInfo } from "../updater.js";
+
 export type Phase = "idle" | "running" | "picker" | "wizard";
 
 export interface ToolMeta {
@@ -53,6 +55,7 @@ export interface UIState {
   sessionUsage: SessionUsage;
   lastTurnDurationMs: number;
   tasks: AgentTask[];
+  updateInfo: UpdateInfo | null;
 }
 
 // Framework-free store so non-React code (agent loop callbacks) can push
@@ -106,6 +109,7 @@ export class AgentUIStore {
       },
       lastTurnDurationMs: 0,
       tasks: [],
+      updateInfo: null,
     };
   }
 
@@ -143,6 +147,10 @@ export class AgentUIStore {
   }
 
   // ---- lifecycle ----
+
+  setUpdateInfo(updateInfo: UpdateInfo | null): void {
+    this.set({ updateInfo }, true);
+  }
 
   setInputDraft(draft: string): void {
     this.set({ inputDraft: draft }, true);

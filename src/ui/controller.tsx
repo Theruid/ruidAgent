@@ -21,6 +21,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { TaskStore } from "../tools/tasks.js";
 import { SnapshotManager } from "../tools/snapshot.js";
+import { checkForUpdate } from "../updater.js";
 
 /**
  * Scans a user prompt for `@filepath` mentions and attaches file contents if found.
@@ -116,6 +117,13 @@ export function startTui(options: TuiOptions): void {
     />,
     { exitOnCtrlC: false },
   );
+
+  // Check for newer npm release in background
+  checkForUpdate().then((updateInfo) => {
+    if (updateInfo?.hasUpdate) {
+      store.setUpdateInfo(updateInfo);
+    }
+  }).catch(() => {});
 
   function exit(): void {
     flushAutosave();

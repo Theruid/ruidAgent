@@ -9,6 +9,7 @@ import { PermissionPrompt } from "./components/PermissionPrompt.js";
 import { SessionPicker } from "./components/SessionPicker.js";
 import { SetupWizard } from "./components/SetupWizard.js";
 import { TaskPanel } from "./components/TaskPanel.js";
+import { UpdatePrompt } from "./components/UpdatePrompt.js";
 
 /** Terminal dimensions with resize tracking. */
 function useTerminalDimensions(): { rows: number; columns: number } {
@@ -133,6 +134,10 @@ export function App({ store, onSubmit, onAbortTurn, onExit, onPickSession, onSet
       </Box>
 
       {state.tasks.length > 0 && <TaskPanel tasks={state.tasks} />}
+
+      {state.updateInfo?.hasUpdate && (
+        <UpdatePrompt info={state.updateInfo} onDismiss={() => store.setUpdateInfo(null)} />
+      )}
 
       {state.notice && (
         <Box paddingLeft={1}>
