@@ -279,6 +279,8 @@ export function InputBox({
     { isActive: !disabled },
   );
 
+  const lines = value ? value.split("\n") : [];
+
   return (
     <Box flexDirection="column" marginTop={disabled ? 0 : undefined}>
       {shouldShowCmdPalette && (
@@ -290,15 +292,23 @@ export function InputBox({
       <Box
         borderStyle="round"
         paddingX={1}
+        flexDirection="column"
         borderColor={shouldShowCmdPalette ? "cyan" : shouldShowFilePalette ? "yellow" : undefined}
       >
-        <Text dimColor>{"> "} </Text>
-        {value ? (
-          <Text wrap="wrap">{value}</Text>
+        {lines.length === 0 ? (
+          <Box>
+            <Text dimColor>{"> "} </Text>
+            <Text dimColor>{placeholder}</Text>
+          </Box>
         ) : (
-          <Text dimColor>{placeholder}</Text>
+          lines.map((line, idx) => (
+            <Box key={idx}>
+              <Text dimColor>{idx === 0 ? "> " : "… "}</Text>
+              <Text wrap="wrap">{line}</Text>
+              {idx === lines.length - 1 && <Text dimColor>▌</Text>}
+            </Box>
+          ))
         )}
-        {value && <Text dimColor>▌</Text>}
       </Box>
     </Box>
   );

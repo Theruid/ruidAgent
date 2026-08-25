@@ -164,7 +164,7 @@ export function App({ store, onSubmit, onAbortTurn, onExit, onPickSession, onSet
               ? "Run /setup to connect a provider…"
               : state.phase === "running"
                 ? "Working… (Ctrl+C to interrupt)"
-                : `Ask anything in [${state.mode.toUpperCase()}] mode… (Tab: switch mode, Shift+Enter: newline)`
+                : `Ask in [${state.mode.toUpperCase()}] mode… (Tab: mode, Ctrl+Enter: newline, @file, /help)`
           }
         />
       )}
