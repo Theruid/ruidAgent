@@ -17,6 +17,8 @@ import {
   loadSession,
 } from "../sessions.js";
 
+import { TaskStore } from "../tools/tasks.js";
+
 export interface TuiOptions {
   provider: LLMProvider | null;
   model: string;
@@ -49,6 +51,7 @@ export function startTui(options: TuiOptions): void {
 
   let model = options.model;
   const permissions: DeferredPermissions = createDeferredPermissions(AUTO_APPROVE);
+  const taskStore = new TaskStore();
 
   // Current conversation state
   let sessionId = newSessionId();
@@ -149,6 +152,7 @@ export function startTui(options: TuiOptions): void {
         messages: history,
         signal: abortController.signal,
         permissions: permissions.manager,
+        taskStore,
         onEvent: (e) => store.applyLoopEvent(e),
       });
       dirty = true;
@@ -223,6 +227,8 @@ export function startTui(options: TuiOptions): void {
         sessionId = newSessionId();
         history = [];
         dirty = false;
+        taskStore.clear();
+        store.setTasks([]);
         store.clearChat();
         store.setNotice("New chat started.");
         break;
@@ -267,6 +273,8 @@ export function startTui(options: TuiOptions): void {
       case "clear":
         history = [];
         dirty = false;
+        taskStore.clear();
+        store.setTasks([]);
         store.clearChat();
         store.setNotice("History cleared.");
         break;
