@@ -3,7 +3,12 @@ import type { Workspace } from "./fs.js";
 import type { LLMProvider } from "../providers/types.js";
 import { runSubagent, type SubagentRole } from "../agent/subagent.js";
 
-export function subagentTool(ws: Workspace, provider: LLMProvider, model: string) {
+export function subagentTool(
+  ws: Workspace,
+  provider: LLMProvider,
+  model: string,
+  signal?: AbortSignal
+) {
   return {
     name: "subagent_spawn",
     description:
@@ -38,6 +43,10 @@ export function subagentTool(ws: Workspace, provider: LLMProvider, model: string
       prompt: string;
       maxIterations?: number;
     }): Promise<string> {
+      if (signal?.aborted) {
+        throw new Error("Sub-agent aborted by user");
+      }
+
       const result = await runSubagent({
         role: args.role,
         prompt: args.prompt,
@@ -45,6 +54,7 @@ export function subagentTool(ws: Workspace, provider: LLMProvider, model: string
         model,
         workspaceRoot: ws.root,
         maxIterations: args.maxIterations ?? 10,
+        signal,
       });
 
       return `[Sub-Agent (${args.role.toUpperCase()}) Result]:\n${result}`;

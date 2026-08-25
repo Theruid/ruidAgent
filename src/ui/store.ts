@@ -367,7 +367,24 @@ export class AgentUIStore {
   }
 
   endTurn(finalMessages: LLMMessage[] | null, error?: string): void {
-    const patch: Partial<UIState> = { phase: "idle", pendingPermission: null, streamingText: "" };
+    // Clear pending spinner status on any tool rows that were in flight when aborted
+    const cleanedMessages = this.state.messages.map((m) =>
+      m.kind === "tool" && m.pending
+        ? {
+            ...m,
+            pending: false,
+            toolError: true,
+            text: error ? `Interrupted: ${error}` : "(cancelled by user)",
+          }
+        : m
+    );
+
+    const patch: Partial<UIState> = {
+      phase: "idle",
+      pendingPermission: null,
+      streamingText: "",
+      messages: cleanedMessages,
+    };
     if (this.streamBuf.trim()) {
       this.commitStreamRow(patch);
     }

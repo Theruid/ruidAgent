@@ -23,7 +23,8 @@ export function buildRegistry(
   taskStore = new TaskStore(),
   snapshots = new SnapshotManager(),
   provider?: LLMProvider,
-  model?: string
+  model?: string,
+  signal?: AbortSignal
 ): Map<string, AgentTool> {
   const tools: AgentTool[] = [
     { ...readFileTool(ws), requiresPermission: false },
@@ -37,7 +38,7 @@ export function buildRegistry(
     { ...taskCreateTool(taskStore), requiresPermission: false },
     { ...taskUpdateTool(taskStore), requiresPermission: false },
     { ...rollbackTool(ws, snapshots), requiresPermission: false },
-    ...(provider && model ? [{ ...subagentTool(ws, provider, model), requiresPermission: false }] : []),
+    ...(provider && model ? [{ ...subagentTool(ws, provider, model, signal), requiresPermission: false }] : []),
     { ...writeFileTool(ws, snapshots), requiresPermission: true },
     { ...editFileTool(ws, snapshots), requiresPermission: true },
     { ...bashTool(ws), requiresPermission: true },

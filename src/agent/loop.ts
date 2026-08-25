@@ -46,7 +46,7 @@ export async function runAgentLoop(options: LoopOptions): Promise<LLMMessage[]> 
   const taskStore = options.taskStore ?? new TaskStore();
   const snapshots = options.snapshots ?? new SnapshotManager();
   snapshots.beginTurn();
-  const registry = buildRegistry(ws, taskStore, snapshots, options.provider, options.model);
+  const registry = buildRegistry(ws, taskStore, snapshots, options.provider, options.model, options.signal);
   const permissions =
     options.permissions ??
     createDeferredPermissions(
@@ -148,53 +148,54 @@ export async function runAgentLoop(options: LoopOptions): Promise<LLMMessage[]> 
 
     messages.push({ role: "assistant", content });
 
-    const toolCalls = content.filter((c) => c.type === "tool_call");
+    const toolCalls = content.filter((c): c is Extract<typeof c, { type: "tool_call" }> => c.type === "tool_call");
     if (toolCalls.length === 0) break; // final text answer
 
-    const results = [];
-    for (const call of toolCalls) {
-      if (call.type !== "tool_call") continue;
-      const tool: AgentTool | undefined = registry.get(call.name);
-      const requiresPermission = tool?.requiresPermission ?? true;
+    // Dispatch all tool calls (including parallel subagent_spawn calls) simultaneously
+    const results = await Promise.all(
+      toolCalls.map(async (call) => {
+        const tool: AgentTool | undefined = registry.get(call.name);
+        const requiresPermission = tool?.requiresPermission ?? true;
 
-      let approved = true;
-      if (requiresPermission) {
-        options.onEvent?.({ type: "permission_request", name: call.name, input: call.input });
-        approved = await permissions.check(call.name, call.input);
-      }
+        let approved = true;
+        if (requiresPermission) {
+          options.onEvent?.({ type: "permission_request", name: call.name, input: call.input });
+          approved = await permissions.check(call.name, call.input);
+        }
 
-      if (!approved) {
-        options.onEvent?.({ type: "permission_denied", name: call.name });
-        results.push({
+        if (!approved) {
+          options.onEvent?.({ type: "permission_denied", name: call.name });
+          return {
+            type: "tool_result" as const,
+            toolCallId: call.id,
+            content:
+              "Permission denied by user. Do not retry this action; inform the user that the operation was cancelled.",
+            isError: true,
+          };
+        }
+
+        options.onEvent?.({ type: "tool_start", name: call.name, input: call.input });
+        const result = await dispatch(registry, call.name, call.input);
+
+        if (call.name.startsWith("task_")) {
+          options.onEvent?.({ type: "tasks_updated", tasks: taskStore.list() });
+        }
+
+        options.onEvent?.({
+          type: "tool_result",
+          name: call.name,
+          content: result.content,
+          isError: result.isError,
+        });
+
+        return {
           type: "tool_result" as const,
           toolCallId: call.id,
-          content:
-            "Permission denied by user. Do not retry this action; inform the user that the operation was cancelled.",
-          isError: true,
-        });
-        continue;
-      }
-
-      options.onEvent?.({ type: "tool_start", name: call.name, input: call.input });
-      const result = await dispatch(registry, call.name, call.input);
-
-      if (call.name.startsWith("task_")) {
-        options.onEvent?.({ type: "tasks_updated", tasks: taskStore.list() });
-      }
-
-      options.onEvent?.({
-        type: "tool_result",
-        name: call.name,
-        content: result.content,
-        isError: result.isError,
-      });
-      results.push({
-        type: "tool_result" as const,
-        toolCallId: call.id,
-        content: result.content,
-        isError: result.isError,
-      });
-    }
+          content: result.content,
+          isError: result.isError,
+        };
+      })
+    );
 
     messages.push({ role: "user", content: results });
 
