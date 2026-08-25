@@ -107,24 +107,24 @@ This document outlines the current state of CodingAgent, key architectural decis
 4. **Test & Diagnostic Runner**:
    - Shell-based test runners with output inspection.
 
-### Phase 3: Developer Experience & TUI Enhancements (In Progress)
+### Phase 3: Developer Experience & TUI Enhancements (Completed)
 1. **Interactive Agent Modes & Tab Cycling**:
    - `code` (safe default with permissions), `plan` (read-only architecture planning), and `auto` (autonomous execution with pre-granted permissions).
    - Pressing **`Tab`** cycles between modes; `/mode <code|plan|auto>` allows explicit switching.
    - Status bar mode badge (`[CODE]`, `[PLAN]`, `[AUTO]`).
 2. **Live TaskPanel UI Component**:
    - Real-time plan checklist rendering with state indicators (`✓`, `⠋`, `○`).
-   - Syncs automatically when agent invokes `task_create` and `task_update`.
-3. **Multi-line Input & External Editor Support**:
-   - Multi-line editing and `$EDITOR` spawning in `InputBox`.
-4. **Path & Command Autocomplete**:
-   - Tab completion for file paths in workspace and slash commands in palette.
-5. **Enhanced Interactive Diff & Rollback**:
-   - Side-by-side / color-coded diff inspection in permission prompt with rollback capability.
-6. **Session Export**:
-   - `/export` command to export full session transcript to Markdown / HTML.
+   - Syncs automatically across turns when agent invokes `task_create` and `task_update`.
+3. **Multi-line Input Support**:
+   - `Shift+Enter` inserts newlines in `InputBox` while Enter submits.
+4. **`@` File Mention & Fuzzy Autocomplete**:
+   - Type `@` to open the file picker popup (`FilePalette.tsx`) with real-time fuzzy search.
+   - Automatically attaches mentioned file contents directly into the prompt context.
+5. **Turn Snapshot & `/rollback` Engine**:
+   - `SnapshotManager` captures file state before mutations.
+   - `/rollback` command and `rollback` tool safely revert all modified and created files back to their pre-turn state without Git dependencies.
 
-### Phase 4: Sub-Agents & Extensibility
+### Phase 4: Sub-Agents & Extensibility (Upcoming)
 1. **Model Context Protocol (MCP) Client**:
    - Connect to standard MCP servers over stdio/SSE to dynamically import tools.
 2. **Sub-Agent Delegation**:

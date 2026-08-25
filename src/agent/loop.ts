@@ -11,6 +11,7 @@ import { createDeferredPermissions, type PermissionManager } from "../permission
 import { buildSystemPrompt } from "./systemPrompt.js";
 import { compactHistory, estimateHistoryTokens } from "./context.js";
 import { TaskStore, type AgentTask } from "../tools/tasks.js";
+import { SnapshotManager } from "../tools/snapshot.js";
 
 export interface LoopOptions {
   provider: LLMProvider;
@@ -25,6 +26,7 @@ export interface LoopOptions {
   onEvent?: (event: LoopEvent) => void;
   maxContextTokens?: number;
   taskStore?: TaskStore;
+  snapshots?: SnapshotManager;
 }
 
 export type LoopEvent =
@@ -42,7 +44,9 @@ export type LoopEvent =
 export async function runAgentLoop(options: LoopOptions): Promise<LLMMessage[]> {
   const ws = new Workspace(options.workspaceRoot ?? process.cwd());
   const taskStore = options.taskStore ?? new TaskStore();
-  const registry = buildRegistry(ws, taskStore);
+  const snapshots = options.snapshots ?? new SnapshotManager();
+  snapshots.beginTurn();
+  const registry = buildRegistry(ws, taskStore, snapshots);
   const permissions =
     options.permissions ??
     createDeferredPermissions(
@@ -57,6 +61,7 @@ export async function runAgentLoop(options: LoopOptions): Promise<LLMMessage[]> 
         "task_list",
         "task_create",
         "task_update",
+        "rollback",
       ])
     ).manager;
   const maxIterations = options.maxIterations ?? 40;

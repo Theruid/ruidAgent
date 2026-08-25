@@ -4,6 +4,7 @@ import { grepTool } from "./search.js";
 import { bashTool } from "./bash.js";
 import { gitStatusTool, gitDiffTool, gitLogTool } from "./git.js";
 import { TaskStore, taskCreateTool, taskUpdateTool, taskListTool } from "./tasks.js";
+import { SnapshotManager, rollbackTool } from "./snapshot.js";
 import type { ToolDef } from "../providers/types.js";
 
 export interface AgentTool {
@@ -16,7 +17,11 @@ export interface AgentTool {
   requiresPermission: boolean;
 }
 
-export function buildRegistry(ws: Workspace, taskStore = new TaskStore()): Map<string, AgentTool> {
+export function buildRegistry(
+  ws: Workspace,
+  taskStore = new TaskStore(),
+  snapshots = new SnapshotManager()
+): Map<string, AgentTool> {
   const tools: AgentTool[] = [
     { ...readFileTool(ws), requiresPermission: false },
     { ...listDirTool(ws), requiresPermission: false },
@@ -28,8 +33,9 @@ export function buildRegistry(ws: Workspace, taskStore = new TaskStore()): Map<s
     { ...taskListTool(taskStore), requiresPermission: false },
     { ...taskCreateTool(taskStore), requiresPermission: false },
     { ...taskUpdateTool(taskStore), requiresPermission: false },
-    { ...writeFileTool(ws), requiresPermission: true },
-    { ...editFileTool(ws), requiresPermission: true },
+    { ...rollbackTool(ws, snapshots), requiresPermission: false },
+    { ...writeFileTool(ws, snapshots), requiresPermission: true },
+    { ...editFileTool(ws, snapshots), requiresPermission: true },
     { ...bashTool(ws), requiresPermission: true },
   ];
   return new Map(tools.map((t) => [t.name, t]));

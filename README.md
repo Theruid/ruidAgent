@@ -84,8 +84,11 @@ One-shot mode requires a TTY-free environment only for `-p`; interactive mode ne
 | Command | Action |
 |---|---|
 | `Tab` (in prompt) | Cycle agent mode (`[CODE]` → `[PLAN]` → `[AUTO]`) |
+| `@<filename>` | File picker autocomplete & prompt context attachment |
+| `Shift+Enter` | Insert newline for multi-line prompts |
 | `/mode <code\|plan\|auto>` | Switch agent operating mode |
 | `/tasks` or `/plan` | View currently active plan and tasks |
+| `/rollback [turn]` | Revert file modifications made during turn |
 | `/new` | Start a new chat (autosaves the current one) |
 | `/resume` or `/sessions` | Open the session picker |
 | `/setup` | Provider setup wizard (connects immediately) |
@@ -96,7 +99,7 @@ One-shot mode requires a TTY-free environment only for `-p`; interactive mode ne
 | `/exit`, `/quit` | Save and exit |
 | `/help` | List commands |
 
-Keyboard: `Tab` cycles modes, PageUp/PageDown scroll, Ctrl+arrows fine-scroll, Ctrl+C aborts the running turn (twice quickly exits).
+Keyboard: `Tab` cycles modes, `Shift+Enter` inserts newlines, `@` triggers file search, PageUp/PageDown scroll, Ctrl+arrows fine-scroll, Ctrl+C aborts turn.
 
 ## Operating modes
 
@@ -118,6 +121,7 @@ Keyboard: `Tab` cycles modes, PageUp/PageDown scroll, Ctrl+arrows fine-scroll, C
 | `task_create` | Add plan/task items | auto-approved |
 | `task_update` | Update task status (`in_progress`, `completed`) | auto-approved |
 | `task_list` | View plan checklist | auto-approved |
+| `rollback` | Revert file modifications back to pre-turn state | auto-approved |
 | `write_file` | Create/overwrite a file | prompts in code mode |
 | `edit_file` | Exact-match string replace | prompts in code mode |
 | `bash` | Shell command in workspace root (2 min default timeout, 200 KB output cap) | prompts in code mode |

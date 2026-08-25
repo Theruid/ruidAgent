@@ -66,7 +66,9 @@ export function readFileTool(ws: Workspace) {
   };
 }
 
-export function writeFileTool(ws: Workspace) {
+import type { SnapshotManager } from "./snapshot.js";
+
+export function writeFileTool(ws: Workspace, snapshots?: SnapshotManager) {
   return {
     name: "write_file",
     description:
@@ -85,15 +87,17 @@ export function writeFileTool(ws: Workspace) {
     }),
     async execute(args: { path: string; content: string }): Promise<string> {
       const abs = ws.resolve(args.path);
+      const rel = ws.relative(abs);
+      snapshots?.capture(ws.root, rel);
       await fs.mkdir(path.dirname(abs), { recursive: true });
       await fs.writeFile(abs, args.content, "utf8");
       const lineCount = args.content.split("\n").length;
-      return `Wrote ${lineCount} lines to ${ws.relative(abs)}`;
+      return `Wrote ${lineCount} lines to ${rel}`;
     },
   };
 }
 
-export function editFileTool(ws: Workspace) {
+export function editFileTool(ws: Workspace, snapshots?: SnapshotManager) {
   return {
     name: "edit_file",
     description:
@@ -121,6 +125,7 @@ export function editFileTool(ws: Workspace) {
       replace_all?: boolean;
     }): Promise<string> {
       const abs = ws.resolve(args.path);
+      const rel = ws.relative(abs);
       if (!existsSync(abs)) throw new Error(`File not found: ${args.path}`);
 
       const raw = await fs.readFile(abs, "utf8");
@@ -135,11 +140,12 @@ export function editFileTool(ws: Workspace) {
           `old_string matches ${occurrences} times in ${args.path}. Add more context to make it unique, or set replace_all=true.`,
         );
       }
+      snapshots?.capture(ws.root, rel);
       const updated = args.replace_all
         ? raw.split(args.old_string).join(args.new_string)
         : raw.replace(args.old_string, args.new_string);
       await fs.writeFile(abs, updated, "utf8");
-      return `Edited ${ws.relative(abs)} (${occurrences} replacement${occurrences > 1 ? "s" : ""})`;
+      return `Edited ${rel} (${occurrences} replacement${occurrences > 1 ? "s" : ""})`;
     },
   };
 }

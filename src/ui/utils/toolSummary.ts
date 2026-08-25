@@ -117,6 +117,13 @@ export function formatToolBadge(
       }
       break;
     }
+    case "rollback": {
+      target = inp.turn ? `turn #${inp.turn}` : "latest turn";
+      if (resultText && !isError) {
+        meta = resultText.includes("Restored") || resultText.includes("Removed") ? "reverted" : "no files";
+      }
+      break;
+    }
     default: {
       target = Object.values(inp)[0] ? String(Object.values(inp)[0]) : "";
       if (target.length > 40) target = target.slice(0, 38) + "…";

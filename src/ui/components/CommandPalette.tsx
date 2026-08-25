@@ -10,6 +10,7 @@ export interface CommandItem {
 export const COMMANDS: CommandItem[] = [
   { name: "/mode", args: "<code|plan|auto>", description: "Switch mode or show current (Tab cycles)" },
   { name: "/tasks", description: "Show active plan and tasks" },
+  { name: "/rollback", args: "[turn]", description: "Revert file modifications made during turn" },
   { name: "/new", description: "Start a new chat session" },
   { name: "/resume", description: "Pick and resume a saved session" },
   { name: "/sessions", description: "List all saved sessions" },

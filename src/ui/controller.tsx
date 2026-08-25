@@ -17,7 +17,43 @@ import {
   loadSession,
 } from "../sessions.js";
 
+import fs from "node:fs";
+import path from "node:path";
 import { TaskStore } from "../tools/tasks.js";
+import { SnapshotManager } from "../tools/snapshot.js";
+
+/**
+ * Scans a user prompt for `@filepath` mentions and attaches file contents if found.
+ */
+function resolveAtFileMentions(prompt: string, workspaceRoot: string): string {
+  const atRegex = /@([a-zA-Z0-9_\-./\\]+\.[a-zA-Z0-9]+)/g;
+  const matches = [...prompt.matchAll(atRegex)];
+  if (matches.length === 0) return prompt;
+
+  const attachments: string[] = [];
+  const seen = new Set<string>();
+
+  for (const m of matches) {
+    const rel = m[1].replace(/\\/g, "/");
+    if (seen.has(rel)) continue;
+    seen.add(rel);
+
+    const abs = path.join(workspaceRoot, rel);
+    if (fs.existsSync(abs)) {
+      try {
+        const stat = fs.statSync(abs);
+        if (stat.isFile() && stat.size < 256 * 1024) {
+          const content = fs.readFileSync(abs, "utf8");
+          attachments.push(`\n\n--- Content of @${rel} ---\n${content}\n--- End of @${rel} ---`);
+        }
+      } catch {
+        // Skip unreadable files
+      }
+    }
+  }
+
+  return attachments.length > 0 ? `${prompt}${attachments.join("")}` : prompt;
+}
 
 export interface TuiOptions {
   provider: LLMProvider | null;
@@ -36,6 +72,7 @@ const AUTO_APPROVE = new Set([
   "task_list",
   "task_create",
   "task_update",
+  "rollback",
 ]);
 
 export function startTui(options: TuiOptions): void {
@@ -52,6 +89,7 @@ export function startTui(options: TuiOptions): void {
   let model = options.model;
   const permissions: DeferredPermissions = createDeferredPermissions(AUTO_APPROVE);
   const taskStore = new TaskStore();
+  const snapshots = new SnapshotManager();
 
   // Current conversation state
   let sessionId = newSessionId();
@@ -139,6 +177,7 @@ export function startTui(options: TuiOptions): void {
   }
 
   async function runTurn(prompt: string): Promise<void> {
+    const resolvedPrompt = resolveAtFileMentions(prompt, process.cwd());
     store.addUserMessage(prompt);
     store.beginTurn();
     abortController = new AbortController();
@@ -148,11 +187,12 @@ export function startTui(options: TuiOptions): void {
         provider: active!.provider,
         model: model!,
         workspaceRoot: process.cwd(),
-        initialPrompt: prompt,
+        initialPrompt: resolvedPrompt,
         messages: history,
         signal: abortController.signal,
         permissions: permissions.manager,
         taskStore,
+        snapshots,
         onEvent: (e) => store.applyLoopEvent(e),
       });
       dirty = true;
@@ -316,8 +356,26 @@ export function startTui(options: TuiOptions): void {
         break;
       }
 
+      case "rollback": {
+        const turnNum = rest[0] ? parseInt(rest[0], 10) : undefined;
+        try {
+          const { restored, deleted } = snapshots.rollback(process.cwd(), turnNum);
+          const messages = [];
+          if (restored.length > 0) messages.push(`Restored: ${restored.join(", ")}`);
+          if (deleted.length > 0) messages.push(`Removed: ${deleted.join(", ")}`);
+          if (messages.length === 0) {
+            store.setNotice("No files were modified in that turn to rollback.");
+          } else {
+            store.setNotice(`Rollback complete — ${messages.join("; ")}`);
+          }
+        } catch (err: any) {
+          store.setNotice(`Rollback failed: ${err.message}`);
+        }
+        break;
+      }
+
       case "help":
-        store.setNotice("/new /resume /sessions /setup /providers /connect <name> /model <id> /mode <code|plan|auto> /tasks /clear /exit");
+        store.setNotice("/new /resume /sessions /setup /providers /connect <name> /model <id> /mode <code|plan|auto> /rollback /tasks /clear /exit");
         break;
 
       default:
