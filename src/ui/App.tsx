@@ -130,16 +130,16 @@ export function App({ store, onSubmit, onAbortTurn, onExit, onPickSession, onSet
   const showWelcome = state.messages.length === 0 && !state.streamingText && state.tasks.length === 0;
 
   // Calculate remaining height for MessageList
-  let overhead = 2; // StatusBar + base margin
+  let overhead = 1; // StatusBar (1 line)
   if (state.phase === "picker" || state.phase === "wizard") {
     overhead += 10;
   } else {
-    // InputBox border & content + dynamic allowance for command/file palette popups
-    overhead += 9;
+    // InputBox: border (2 lines) + content lines
+    const inputLines = state.inputDraft ? state.inputDraft.split("\n").length : 1;
+    overhead += Math.max(3, inputLines + 2);
   }
   if (state.notice) overhead += 1;
   if (state.pendingPermission) {
-    // If permission has diff or command, allocate extra height
     overhead += 8;
   }
   if (state.tasks.length > 0) {
@@ -150,7 +150,7 @@ export function App({ store, onSubmit, onAbortTurn, onExit, onPickSession, onSet
 
   return (
     <Box flexDirection="column" height={rows} paddingX={1}>
-      <Box flexDirection="column" flexGrow={1} height={viewportHeight} justifyContent={showWelcome ? "center" : "flex-start"}>
+      <Box flexDirection="column" height={viewportHeight} justifyContent={showWelcome ? "center" : "flex-start"}>
         {showWelcome ? (
           <Welcome connected={state.connected} />
         ) : (

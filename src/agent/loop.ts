@@ -31,6 +31,7 @@ export interface LoopOptions {
 
 export type LoopEvent =
   | { type: "text_delta"; text: string }
+  | { type: "thought_delta"; text: string }
   | { type: "tool_start"; name: string; input?: unknown }
   | { type: "tool_result"; name: string; content: string; isError: boolean }
   | { type: "permission_request"; name: string; input?: unknown }
@@ -108,6 +109,10 @@ export async function runAgentLoop(options: LoopOptions): Promise<LLMMessage[]> 
               content.push(textBuffer);
             }
             textBuffer.text += event.text;
+            break;
+          }
+          case "thought_delta": {
+            options.onEvent?.({ type: "thought_delta", text: event.text });
             break;
           }
           case "tool_call":

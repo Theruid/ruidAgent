@@ -39,6 +39,7 @@ export interface ToolDef {
 
 export type StreamEvent =
   | { type: "text_delta"; text: string }
+  | { type: "thought_delta"; text: string }
   // Emitted once per call, only after its full argument JSON has arrived.
   | { type: "tool_call"; id: string; name: string; input: unknown }
   | { type: "message_delta"; stopReason: string | null; usage?: Usage }

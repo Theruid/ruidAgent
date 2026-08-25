@@ -242,6 +242,10 @@ export class AgentUIStore {
         this.set({ streamingText: this.streamBuf }, true);
         break;
 
+      case "thought_delta":
+        // Show brief thinking notice without corrupting main text
+        break;
+
       case "tool_start": {
         this.toolStartTimes.set(e.name, Date.now());
         const inputObj = e.input && typeof e.input === "object" ? (e.input as Record<string, unknown>) : undefined;

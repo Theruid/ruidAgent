@@ -191,9 +191,9 @@ async function* parseStream(body: ReadableStream<Uint8Array>): AsyncIterable<Str
     if (typeof delta.content === "string" && delta.content.length > 0) {
       yield { type: "text_delta", text: delta.content };
     } else if (typeof delta.reasoning_content === "string" && delta.reasoning_content.length > 0) {
-      yield { type: "text_delta", text: delta.reasoning_content };
+      yield { type: "thought_delta", text: delta.reasoning_content };
     } else if (typeof delta.reasoning === "string" && delta.reasoning.length > 0) {
-      yield { type: "text_delta", text: delta.reasoning };
+      yield { type: "thought_delta", text: delta.reasoning };
     }
 
     for (const tc of delta.tool_calls ?? []) {

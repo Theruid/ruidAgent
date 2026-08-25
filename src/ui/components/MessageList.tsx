@@ -198,19 +198,23 @@ export function MessageList({
   const allLines = compileLines(messages, streamingText, columns);
   const totalLines = allLines.length;
 
-  const height = Math.max(1, viewportHeight);
-  const maxScroll = Math.max(0, totalLines - height);
+  const showIndicators = scrollOffset > 0;
+  // Reserve space for indicator headers/footers if scrolled
+  const indicatorAllowance = showIndicators ? 2 : 0;
+  const contentHeight = Math.max(1, viewportHeight - indicatorAllowance);
+
+  const maxScroll = Math.max(0, totalLines - contentHeight);
   const clampedOffset = Math.min(Math.max(0, scrollOffset), maxScroll);
 
-  const startIdx = Math.max(0, totalLines - height - clampedOffset);
-  const endIdx = Math.min(totalLines, startIdx + height);
+  const startIdx = Math.max(0, totalLines - contentHeight - clampedOffset);
+  const endIdx = Math.min(totalLines, startIdx + contentHeight);
   const visibleLines = allLines.slice(startIdx, endIdx);
 
   const linesAbove = startIdx;
   const linesBelow = totalLines - endIdx;
 
   return (
-    <Box flexDirection="column" height={height} flexGrow={1} justifyContent="flex-start">
+    <Box flexDirection="column" height={viewportHeight} justifyContent="flex-start">
       {clampedOffset > 0 && linesAbove > 0 && (
         <Box paddingLeft={1}>
           <Text dimColor>
