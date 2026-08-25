@@ -124,8 +124,10 @@ This document outlines the current state of CodingAgent, key architectural decis
    - `SnapshotManager` captures file state before mutations.
    - `/rollback` command and `rollback` tool safely revert all modified and created files back to their pre-turn state without Git dependencies.
 
-### Phase 4: Sub-Agents & Extensibility (Upcoming)
-1. **Model Context Protocol (MCP) Client**:
-   - Connect to standard MCP servers over stdio/SSE to dynamically import tools.
-2. **Sub-Agent Delegation**:
-   - Isolated worker sub-agents for dedicated search, code review, or testing tasks.
+### Phase 4: Sub-Agents & Extensibility (In Progress)
+1. **Sub-Agent Swarm Delegation Engine**:
+   - `subagent_spawn` tool allowing the orchestrator to delegate research, coding, or reviews to specialized sub-agents.
+   - Built-in roles: `explore` (read-only search), `coder` (isolated implementation), `reviewer` (adversarial testing/diff checks), `general`.
+   - Complete context isolation: child loop intermediate tool logs never pollute parent conversation context.
+2. **Model Context Protocol (MCP) Client (Upcoming)**:
+   - Connect to standard MCP servers over stdio/SSE to dynamically import external tools.

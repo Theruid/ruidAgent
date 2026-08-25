@@ -5,7 +5,8 @@ import { bashTool } from "./bash.js";
 import { gitStatusTool, gitDiffTool, gitLogTool } from "./git.js";
 import { TaskStore, taskCreateTool, taskUpdateTool, taskListTool } from "./tasks.js";
 import { SnapshotManager, rollbackTool } from "./snapshot.js";
-import type { ToolDef } from "../providers/types.js";
+import { subagentTool } from "./subagent.js";
+import type { ToolDef, LLMProvider } from "../providers/types.js";
 
 export interface AgentTool {
   name: string;
@@ -20,7 +21,9 @@ export interface AgentTool {
 export function buildRegistry(
   ws: Workspace,
   taskStore = new TaskStore(),
-  snapshots = new SnapshotManager()
+  snapshots = new SnapshotManager(),
+  provider?: LLMProvider,
+  model?: string
 ): Map<string, AgentTool> {
   const tools: AgentTool[] = [
     { ...readFileTool(ws), requiresPermission: false },
@@ -34,6 +37,7 @@ export function buildRegistry(
     { ...taskCreateTool(taskStore), requiresPermission: false },
     { ...taskUpdateTool(taskStore), requiresPermission: false },
     { ...rollbackTool(ws, snapshots), requiresPermission: false },
+    ...(provider && model ? [{ ...subagentTool(ws, provider, model), requiresPermission: false }] : []),
     { ...writeFileTool(ws, snapshots), requiresPermission: true },
     { ...editFileTool(ws, snapshots), requiresPermission: true },
     { ...bashTool(ws), requiresPermission: true },

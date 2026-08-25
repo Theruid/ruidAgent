@@ -74,6 +74,7 @@ const AUTO_APPROVE = new Set([
   "task_create",
   "task_update",
   "rollback",
+  "subagent_spawn",
 ]);
 
 export function startTui(options: TuiOptions): void {

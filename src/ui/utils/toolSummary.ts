@@ -124,6 +124,14 @@ export function formatToolBadge(
       }
       break;
     }
+    case "subagent_spawn": {
+      const role = String(inp.role || "general").toUpperCase();
+      target = `[${role}] ${String(inp.prompt || "").slice(0, 45)}…`;
+      if (resultText && !isError) {
+        meta = "completed";
+      }
+      break;
+    }
     default: {
       target = Object.values(inp)[0] ? String(Object.values(inp)[0]) : "";
       if (target.length > 40) target = target.slice(0, 38) + "…";

@@ -30,6 +30,8 @@ const READ_ONLY_TOOLS = new Set([
   "task_list",
   "task_create",
   "task_update",
+  "rollback",
+  "subagent_spawn",
 ]);
 
 export function createDeferredPermissions(

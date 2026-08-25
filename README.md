@@ -122,6 +122,7 @@ Keyboard: `Tab` cycles modes, `Shift+Enter` inserts newlines, `@` triggers file 
 | `task_update` | Update task status (`in_progress`, `completed`) | auto-approved |
 | `task_list` | View plan checklist | auto-approved |
 | `rollback` | Revert file modifications back to pre-turn state | auto-approved |
+| `subagent_spawn` | Delegate tasks to specialized worker sub-agents | auto-approved |
 | `write_file` | Create/overwrite a file | prompts in code mode |
 | `edit_file` | Exact-match string replace | prompts in code mode |
 | `bash` | Shell command in workspace root (2 min default timeout, 200 KB output cap) | prompts in code mode |

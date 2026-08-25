@@ -46,7 +46,7 @@ export async function runAgentLoop(options: LoopOptions): Promise<LLMMessage[]> 
   const taskStore = options.taskStore ?? new TaskStore();
   const snapshots = options.snapshots ?? new SnapshotManager();
   snapshots.beginTurn();
-  const registry = buildRegistry(ws, taskStore, snapshots);
+  const registry = buildRegistry(ws, taskStore, snapshots, options.provider, options.model);
   const permissions =
     options.permissions ??
     createDeferredPermissions(
@@ -62,6 +62,7 @@ export async function runAgentLoop(options: LoopOptions): Promise<LLMMessage[]> 
         "task_create",
         "task_update",
         "rollback",
+        "subagent_spawn",
       ])
     ).manager;
   const maxIterations = options.maxIterations ?? 40;

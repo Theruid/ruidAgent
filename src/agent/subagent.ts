@@ -1,0 +1,123 @@
+import type { LLMProvider, LLMMessage } from "../providers/types.js";
+import { runAgentLoop, type LoopEvent } from "./loop.js";
+import { Workspace } from "../tools/fs.js";
+import { createDeferredPermissions } from "../permissions.js";
+
+export type SubagentRole = "explore" | "coder" | "reviewer" | "general";
+
+export interface SubagentOptions {
+  role: SubagentRole;
+  prompt: string;
+  provider: LLMProvider;
+  model: string;
+  workspaceRoot?: string;
+  maxIterations?: number;
+  onProgress?: (text: string) => void;
+  signal?: AbortSignal;
+}
+
+export function buildSubagentSystemPrompt(
+  role: SubagentRole,
+  workspaceRoot: string,
+  platform: string
+): string {
+  const baseHeader = `You are a specialized sub-agent [ROLE: ${role.toUpperCase()}] working in ${workspaceRoot} on ${platform}.
+Your mission is to perform a focused task delegated by the main orchestrator agent.
+Be thorough in tool usage, and concise in your final output. Return ONLY the direct findings/results without filler.`;
+
+  switch (role) {
+    case "explore":
+      return `${baseHeader}
+
+Role Guidelines:
+- You are a read-only research specialist.
+- Use read_file, glob, grep, list_dir, git_status, and git_log to investigate code, find definitions, and trace dependencies.
+- Do not attempt to modify files.
+- Summarize your exact findings, file paths, line numbers, and patterns discovered.`;
+
+    case "reviewer":
+      return `${baseHeader}
+
+Role Guidelines:
+- You are an adversarial code reviewer and verification specialist.
+- Inspect changes via git_diff, check modified files, and run tests or linters via bash if needed.
+- Report any syntax issues, bugs, regressions, or test failures clearly.`;
+
+    case "coder":
+      return `${baseHeader}
+
+Role Guidelines:
+- You are an implementation specialist.
+- Read files carefully before modifying them with edit_file or write_file.
+- Make focused, precise edits and verify changes when done.`;
+
+    case "general":
+    default:
+      return `${baseHeader}
+
+Role Guidelines:
+- Accomplish the task using all available tools and provide a clear final summary.`;
+  }
+}
+
+/**
+ * Executes a sub-agent in an isolated context loop.
+ * Returns the final synthesized answer from the sub-agent.
+ */
+export async function runSubagent(opts: SubagentOptions): Promise<string> {
+  const ws = new Workspace(opts.workspaceRoot ?? process.cwd());
+  const maxIterations = opts.maxIterations ?? 10;
+
+  // In auto/sub-agent mode, allow all standard tools without interactive prompts
+  const permissions = createDeferredPermissions(
+    new Set([
+      "read_file",
+      "list_dir",
+      "glob",
+      "grep",
+      "git_status",
+      "git_diff",
+      "git_log",
+      "write_file",
+      "edit_file",
+      "bash",
+      "task_list",
+      "task_create",
+      "task_update",
+    ]),
+    opts.role === "explore" ? "plan" : "auto"
+  );
+
+  let finalAnswer = "";
+  const events: LoopEvent[] = [];
+
+  const history: LLMMessage[] = await runAgentLoop({
+    provider: opts.provider,
+    model: opts.model,
+    workspaceRoot: ws.root,
+    initialPrompt: opts.prompt,
+    maxIterations,
+    permissions: permissions.manager,
+    signal: opts.signal,
+    onEvent: (event) => {
+      events.push(event);
+      if (event.type === "text_delta") {
+        opts.onProgress?.(event.text);
+      }
+    },
+  });
+
+  // Extract the assistant's final text answer from history
+  for (let i = history.length - 1; i >= 0; i--) {
+    const msg = history[i];
+    if (msg.role === "assistant") {
+      const textBlocks = msg.content.filter((c): c is Extract<typeof c, { type: "text" }> => c.type === "text");
+      if (textBlocks.length > 0) {
+        finalAnswer = textBlocks.map((b) => b.text).join("\n").trim();
+        break;
+      }
+    }
+  }
+
+  return finalAnswer || "Sub-agent finished with no text output.";
+}
