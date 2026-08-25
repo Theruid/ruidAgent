@@ -156,7 +156,7 @@ export function App({ store, onSubmit, onAbortTurn, onExit, onPickSession, onSet
       ) : (
         <InputBox
           onSubmit={onSubmit}
-          disabled={state.phase === "running"}
+          disabled={state.phase === "running" || Boolean(state.pendingPermission) || Boolean(state.updateInfo?.hasUpdate)}
           initialValue={state.inputDraft}
           onCycleMode={onCycleMode}
           onScrollUp={() => store.scrollUp(2)}

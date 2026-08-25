@@ -19,15 +19,22 @@ export interface UpdateInfo {
 export function getLocalPackageInfo(): { name: string; version: string } {
   try {
     const __dirname = path.dirname(fileURLToPath(import.meta.url));
-    const pkgPath = path.resolve(__dirname, "../../package.json");
-    if (fs.existsSync(pkgPath)) {
-      const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
-      return { name: pkg.name || "@theruid/ruid", version: pkg.version || "0.1.0" };
+    // Check next to dist (dist/../package.json)
+    const distPkgPath = path.resolve(__dirname, "../package.json");
+    if (fs.existsSync(distPkgPath)) {
+      const pkg = JSON.parse(fs.readFileSync(distPkgPath, "utf8"));
+      if (pkg.name && pkg.version) return { name: pkg.name, version: pkg.version };
+    }
+    // Check cwd package.json
+    const cwdPkgPath = path.resolve(process.cwd(), "package.json");
+    if (fs.existsSync(cwdPkgPath)) {
+      const pkg = JSON.parse(fs.readFileSync(cwdPkgPath, "utf8"));
+      if (pkg.name && pkg.version) return { name: pkg.name, version: pkg.version };
     }
   } catch {
     // Fallback
   }
-  return { name: "@theruid/ruid", version: "0.1.0" };
+  return { name: "@theruid/ruid", version: "0.1.6" };
 }
 
 /**
