@@ -102,7 +102,8 @@ export function App({ store, onSubmit, onAbortTurn, onExit, onPickSession, onSet
   if (state.phase === "picker" || state.phase === "wizard") {
     overhead += 10;
   } else {
-    overhead += 3; // InputBox border & content
+    // InputBox border & content + dynamic allowance for command/file palette popups
+    overhead += 9;
   }
   if (state.notice) overhead += 1;
   if (state.pendingPermission) {
@@ -151,6 +152,7 @@ export function App({ store, onSubmit, onAbortTurn, onExit, onPickSession, onSet
         <InputBox
           onSubmit={onSubmit}
           disabled={state.phase === "running"}
+          initialValue={state.inputDraft}
           onCycleMode={onCycleMode}
           onScrollUp={() => store.scrollUp(2)}
           onScrollDown={() => store.scrollDown(2)}
@@ -162,7 +164,7 @@ export function App({ store, onSubmit, onAbortTurn, onExit, onPickSession, onSet
               ? "Run /setup to connect a provider…"
               : state.phase === "running"
                 ? "Working… (Ctrl+C to interrupt)"
-                : `Ask anything in [${state.mode.toUpperCase()}] mode… (Tab: switch mode, / for commands)`
+                : `Ask anything in [${state.mode.toUpperCase()}] mode… (Tab: switch mode, Shift+Enter: newline)`
           }
         />
       )}

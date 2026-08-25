@@ -19,7 +19,7 @@ export function FilePalette({
         paddingX={1}
         marginBottom={0}
       >
-        <Text color="yellow">No matching files for "{query}"</Text>
+        <Text color="yellow">No matching files for "@{query}"</Text>
       </Box>
     );
   }
@@ -47,8 +47,8 @@ export function FilePalette({
         const actualIdx = startIdx + i;
         const isSelected = actualIdx === clampedIndex;
         return (
-          <Box key={file} justifyContent="space-between">
-            <Text color={isSelected ? "yellowBright" : "yellow"} bold={isSelected}>
+          <Box key={file} justifyContent="flex-start">
+            <Text color={isSelected ? "yellowBright" : "yellow"} bold={isSelected} wrap="truncate">
               {isSelected ? "> " : "  "}@{file}
             </Text>
           </Box>

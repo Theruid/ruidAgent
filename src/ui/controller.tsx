@@ -360,13 +360,33 @@ export function startTui(options: TuiOptions): void {
         const turnNum = rest[0] ? parseInt(rest[0], 10) : undefined;
         try {
           const { restored, deleted } = snapshots.rollback(process.cwd(), turnNum);
-          const messages = [];
-          if (restored.length > 0) messages.push(`Restored: ${restored.join(", ")}`);
-          if (deleted.length > 0) messages.push(`Removed: ${deleted.join(", ")}`);
-          if (messages.length === 0) {
-            store.setNotice("No files were modified in that turn to rollback.");
+
+          // Find and pop the last user prompt turn from history
+          let lastUserPrompt = "";
+          while (history.length > 0) {
+            const popped = history.pop();
+            if (popped?.role === "user") {
+              const textContent = popped.content.find((c) => c.type === "text");
+              if (textContent && textContent.type === "text") {
+                lastUserPrompt = textContent.text;
+                break;
+              }
+            }
+          }
+
+          // Reload UI view rows
+          store.loadMessages(toViewMessages(history));
+          if (lastUserPrompt) {
+            store.setInputDraft(lastUserPrompt);
+          }
+
+          const fileSummary = [];
+          if (restored.length > 0) fileSummary.push(`Restored: ${restored.join(", ")}`);
+          if (deleted.length > 0) fileSummary.push(`Removed: ${deleted.join(", ")}`);
+          if (fileSummary.length === 0) {
+            store.setNotice("Rolled back conversation turn (no disk changes to revert).");
           } else {
-            store.setNotice(`Rollback complete — ${messages.join("; ")}`);
+            store.setNotice(`Rolled back — ${fileSummary.join("; ")}`);
           }
         } catch (err: any) {
           store.setNotice(`Rollback failed: ${err.message}`);

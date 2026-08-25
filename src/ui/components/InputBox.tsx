@@ -1,4 +1,4 @@
-import React, { useState, useRef, useMemo } from "react";
+import React, { useState, useRef, useMemo, useEffect } from "react";
 import { Box, Text, useInput } from "ink";
 import { CommandPalette, COMMANDS } from "./CommandPalette.js";
 import { FilePalette } from "./FilePalette.js";
@@ -8,6 +8,7 @@ export interface InputBoxProps {
   onSubmit(line: string): void;
   disabled: boolean;
   placeholder: string;
+  initialValue?: string;
   onCycleMode?(): void;
   onScrollUp?(): void;
   onScrollDown?(): void;
@@ -20,6 +21,7 @@ export function InputBox({
   onSubmit,
   disabled,
   placeholder,
+  initialValue,
   onCycleMode,
   onScrollUp,
   onScrollDown,
@@ -27,13 +29,19 @@ export function InputBox({
   onScrollPageDown,
   onScrollToBottom,
 }: InputBoxProps) {
-  const [value, setValue] = useState("");
+  const [value, setValue] = useState(initialValue ?? "");
   const [selectedCmdIdx, setSelectedCmdIdx] = useState(0);
   const [selectedFileIdx, setSelectedFileIdx] = useState(0);
   const [showPalette, setShowPalette] = useState(false);
   const history = useRef<string[]>([]);
   const histIdx = useRef(-1);
   const draft = useRef("");
+
+  useEffect(() => {
+    if (initialValue !== undefined) {
+      setValue(initialValue);
+    }
+  }, [initialValue]);
 
   // Cached workspace files
   const workspaceFiles = useMemo(() => {
@@ -136,11 +144,21 @@ export function InputBox({
         }
       }
 
-      // 4. Enter / Shift+Enter key
+      // 4. Enter / Shift+Enter / Alt+Enter / Ctrl+Enter key
       if (key.return) {
-        // Shift+Enter inserts a newline
-        if (key.shift || input === "\n" || input === "\r\n") {
-          setValue((v) => v + "\n");
+        // Multi-line trigger: Shift+Enter, Alt+Enter, Ctrl+Enter, or trailing backslash \
+        const isMultiLine =
+          key.shift ||
+          key.meta ||
+          key.ctrl ||
+          input === "\n" ||
+          input === "\r\n" ||
+          value.endsWith("\\");
+
+        if (isMultiLine) {
+          // If ended with \, strip the backslash and add newline
+          const nextVal = value.endsWith("\\") ? value.slice(0, -1) + "\n" : value + "\n";
+          setValue(nextVal);
           return;
         }
 

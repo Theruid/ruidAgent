@@ -45,6 +45,7 @@ export interface UIState {
   connected: boolean;
   messages: ViewMessage[];
   streamingText: string;
+  inputDraft: string;
   notice: string | null;
   pendingPermission: PendingPermission | null;
   turnCount: number;
@@ -93,6 +94,7 @@ export class AgentUIStore {
       connected,
       messages: [],
       streamingText: "",
+      inputDraft: "",
       notice: null,
       pendingPermission: null,
       turnCount: 0,
@@ -141,6 +143,10 @@ export class AgentUIStore {
   }
 
   // ---- lifecycle ----
+
+  setInputDraft(draft: string): void {
+    this.set({ inputDraft: draft }, true);
+  }
 
   setMode(mode: AgentMode): void {
     this.set({ mode }, true);
