@@ -541,9 +541,82 @@
       cursor: pointer;
     }
 
+    /* Minimal Roadmap Section */
+    .roadmap-section {
+      margin: 1rem 0 3.5rem;
+    }
+
+    .roadmap-header {
+      text-align: center;
+      margin-bottom: 1.5rem;
+    }
+
+    .roadmap-header h3 {
+      font-size: 1.15rem;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      color: var(--text);
+    }
+
+    .roadmap-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1rem;
+    }
+
+    .roadmap-col {
+      background: rgba(15, 23, 42, 0.45);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.25rem 1.4rem;
+    }
+
+    .roadmap-col-title {
+      font-size: 0.78rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 0.85rem;
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+    }
+
+    .roadmap-col.done .roadmap-col-title { color: #22c55e; }
+    .roadmap-col.next .roadmap-col-title { color: #38bdf8; }
+    .roadmap-col.future .roadmap-col-title { color: #a855f7; }
+
+    .roadmap-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 0.6rem;
+      font-size: 0.84rem;
+      color: var(--text-muted);
+      line-height: 1.45;
+    }
+
+    .roadmap-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.5rem;
+    }
+
+    .r-icon {
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 700;
+      font-size: 0.85rem;
+      line-height: 1.4;
+    }
+    .r-icon.done { color: #22c55e; }
+    .r-icon.next { color: #38bdf8; }
+    .r-icon.future { color: #a855f7; }
+
     /* Note from Creator Section */
     .creator-note-section {
-      margin: 2rem 0 4rem;
+      margin: 1rem 0 3.5rem;
       display: flex;
       justify-content: center;
     }
@@ -752,6 +825,85 @@
 
         </div>
 
+      </div>
+    </section>
+
+    <!-- Minimal Roadmap Section -->
+    <section class="roadmap-section">
+      <div class="roadmap-header">
+        <h3>Development Roadmap</h3>
+      </div>
+      <div class="roadmap-grid">
+        <!-- What we did -->
+        <div class="roadmap-col done">
+          <div class="roadmap-col-title">
+            <span>✓ Completed</span>
+          </div>
+          <ul class="roadmap-list">
+            <li class="roadmap-item">
+              <span class="r-icon done">✓</span>
+              <span>Standalone multi-LLM CLI engine (Claude, GPT, DeepSeek, Groq, Ollama)</span>
+            </li>
+            <li class="roadmap-item">
+              <span class="r-icon done">✓</span>
+              <span>Interactive React TUI with diff approvals and <code>[CODE]</code>/<code>[PLAN]</code>/<code>[AUTO]</code> modes</span>
+            </li>
+            <li class="roadmap-item">
+              <span class="r-icon done">✓</span>
+              <span>Parallel sub-agent swarm engine with isolated tokens</span>
+            </li>
+            <li class="roadmap-item">
+              <span class="r-icon done">✓</span>
+              <span>Turn snapshot history & instant <code>/rollback</code></span>
+            </li>
+            <li class="roadmap-item">
+              <span class="r-icon done">✓</span>
+              <span>Auto-updater with semver registry checker</span>
+            </li>
+          </ul>
+        </div>
+
+        <!-- What's left / Next -->
+        <div class="roadmap-col next">
+          <div class="roadmap-col-title">
+            <span>⚡ Next Up</span>
+          </div>
+          <ul class="roadmap-list">
+            <li class="roadmap-item">
+              <span class="r-icon next">●</span>
+              <span>Model Context Protocol (MCP) client support (JSON-RPC stdio)</span>
+            </li>
+            <li class="roadmap-item">
+              <span class="r-icon next">●</span>
+              <span>Dynamic external tool discovery from <code>mcp.json</code></span>
+            </li>
+            <li class="roadmap-item">
+              <span class="r-icon next">●</span>
+              <span>MCP tool permission integration into <code>[CODE]</code> mode</span>
+            </li>
+          </ul>
+        </div>
+
+        <!-- Future -->
+        <div class="roadmap-col future">
+          <div class="roadmap-col-title">
+            <span>🔮 Future</span>
+          </div>
+          <ul class="roadmap-list">
+            <li class="roadmap-item">
+              <span class="r-icon future">○</span>
+              <span>Native web search & live docs lookup</span>
+            </li>
+            <li class="roadmap-item">
+              <span class="r-icon future">○</span>
+              <span>Provider presets for GitHub Models & Together AI</span>
+            </li>
+            <li class="roadmap-item">
+              <span class="r-icon future">○</span>
+              <span>Full-text search across past session histories</span>
+            </li>
+          </ul>
+        </div>
       </div>
     </section>
 
