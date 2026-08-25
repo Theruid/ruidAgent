@@ -67,6 +67,11 @@ export function startTui(options: TuiOptions): void {
         store.setPhase("idle");
         tryConnect();
       }}
+      onCycleMode={() => {
+        const nextMode = store.cycleMode();
+        permissions.setMode(nextMode);
+        store.setNotice(`Switched to [${nextMode.toUpperCase()}] mode`);
+      }}
     />,
     { exitOnCtrlC: false },
   );
@@ -276,8 +281,35 @@ export function startTui(options: TuiOptions): void {
         }
         break;
 
+      case "mode": {
+        const target = rest[0]?.toLowerCase();
+        if (target === "code" || target === "plan" || target === "auto") {
+          store.setMode(target);
+          permissions.setMode(target);
+          store.setNotice(`Mode set to [${target.toUpperCase()}]`);
+        } else {
+          const current = store.getState().mode;
+          store.setNotice(`Current mode: [${current.toUpperCase()}]. Valid modes: /mode code | /mode plan | /mode auto (or press Tab)`);
+        }
+        break;
+      }
+
+      case "tasks":
+      case "plan": {
+        const tasks = store.getState().tasks;
+        if (tasks.length === 0) {
+          store.setNotice("No tasks tracked yet.");
+        } else {
+          const listStr = tasks
+            .map((t) => `#${t.id} [${t.status}] ${t.subject}`)
+            .join(" · ");
+          store.setNotice(listStr);
+        }
+        break;
+      }
+
       case "help":
-        store.setNotice("/new /resume /sessions /setup /providers /connect <name> /model <id> /clear /exit");
+        store.setNotice("/new /resume /sessions /setup /providers /connect <name> /model <id> /mode <code|plan|auto> /tasks /clear /exit");
         break;
 
       default:

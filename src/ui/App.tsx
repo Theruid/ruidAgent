@@ -8,6 +8,7 @@ import { StatusBar } from "./components/StatusBar.js";
 import { PermissionPrompt } from "./components/PermissionPrompt.js";
 import { SessionPicker } from "./components/SessionPicker.js";
 import { SetupWizard } from "./components/SetupWizard.js";
+import { TaskPanel } from "./components/TaskPanel.js";
 
 /** Terminal dimensions with resize tracking. */
 function useTerminalDimensions(): { rows: number; columns: number } {
@@ -40,9 +41,10 @@ export interface AppProps {
   /** Session picker callbacks */
   onPickSession(id: string | null): void;
   onSetupDone(): void;
+  onCycleMode?(): void;
 }
 
-export function App({ store, onSubmit, onAbortTurn, onExit, onPickSession, onSetupDone }: AppProps) {
+export function App({ store, onSubmit, onAbortTurn, onExit, onPickSession, onSetupDone, onCycleMode }: AppProps) {
   const state: UIState = useSyncExternalStore(store.subscribe, store.getState);
   const { rows, columns } = useTerminalDimensions();
   const exitIntent = useRef<number>(0);
@@ -93,7 +95,7 @@ export function App({ store, onSubmit, onAbortTurn, onExit, onPickSession, onSet
     }
   });
 
-  const showWelcome = state.messages.length === 0 && !state.streamingText;
+  const showWelcome = state.messages.length === 0 && !state.streamingText && state.tasks.length === 0;
 
   // Calculate remaining height for MessageList
   let overhead = 2; // StatusBar + base margin
@@ -106,6 +108,9 @@ export function App({ store, onSubmit, onAbortTurn, onExit, onPickSession, onSet
   if (state.pendingPermission) {
     // If permission has diff or command, allocate extra height
     overhead += 8;
+  }
+  if (state.tasks.length > 0) {
+    overhead += Math.min(6, state.tasks.length + 2);
   }
 
   const viewportHeight = Math.max(5, rows - overhead);
@@ -126,6 +131,8 @@ export function App({ store, onSubmit, onAbortTurn, onExit, onPickSession, onSet
         )}
       </Box>
 
+      {state.tasks.length > 0 && <TaskPanel tasks={state.tasks} />}
+
       {state.notice && (
         <Box paddingLeft={1}>
           <Text dimColor>{state.notice}</Text>
@@ -144,6 +151,7 @@ export function App({ store, onSubmit, onAbortTurn, onExit, onPickSession, onSet
         <InputBox
           onSubmit={onSubmit}
           disabled={state.phase === "running"}
+          onCycleMode={onCycleMode}
           onScrollUp={() => store.scrollUp(2)}
           onScrollDown={() => store.scrollDown(2)}
           onScrollPageUp={() => store.scrollUp(Math.max(4, Math.floor(rows / 2)))}
@@ -154,7 +162,7 @@ export function App({ store, onSubmit, onAbortTurn, onExit, onPickSession, onSet
               ? "Run /setup to connect a provider…"
               : state.phase === "running"
                 ? "Working… (Ctrl+C to interrupt)"
-                : "Ask anything… (/ for commands, PgUp/PgDn to scroll)"
+                : `Ask anything in [${state.mode.toUpperCase()}] mode… (Tab: switch mode, / for commands)`
           }
         />
       )}
@@ -165,6 +173,8 @@ export function App({ store, onSubmit, onAbortTurn, onExit, onPickSession, onSet
         connected={state.connected}
         msgCount={state.turnCount}
         running={state.phase === "running"}
+        mode={state.mode}
+        taskCount={state.tasks.length}
         usage={state.sessionUsage}
         lastTurnLatencyMs={state.lastTurnDurationMs}
       />

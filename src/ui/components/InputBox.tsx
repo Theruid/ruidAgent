@@ -6,6 +6,7 @@ export interface InputBoxProps {
   onSubmit(line: string): void;
   disabled: boolean;
   placeholder: string;
+  onCycleMode?(): void;
   onScrollUp?(): void;
   onScrollDown?(): void;
   onScrollPageUp?(): void;
@@ -17,6 +18,7 @@ export function InputBox({
   onSubmit,
   disabled,
   placeholder,
+  onCycleMode,
   onScrollUp,
   onScrollDown,
   onScrollPageUp,
@@ -57,9 +59,9 @@ export function InputBox({
         return;
       }
 
-      // 2. Autocomplete navigation when typing slash commands
-      if (isSlashCmd && matchingCmds.length > 0 && !showPalette) {
-        if (key.tab) {
+      // 2. Tab key: autocomplete slash command OR cycle modes
+      if (key.tab) {
+        if (isSlashCmd && matchingCmds.length > 0 && !showPalette) {
           const target = matchingCmds[Math.min(selectedCmdIdx, matchingCmds.length - 1)];
           if (target) {
             const completed = target.args ? `${target.name} ` : target.name;
@@ -69,6 +71,15 @@ export function InputBox({
           return;
         }
 
+        // Empty input or non-slash command: cycle through modes!
+        if (!value.trim()) {
+          onCycleMode?.();
+          return;
+        }
+      }
+
+      // Autocomplete navigation when typing slash commands
+      if (isSlashCmd && matchingCmds.length > 0 && !showPalette) {
         if (key.upArrow) {
           setSelectedCmdIdx((prev) => (prev > 0 ? prev - 1 : matchingCmds.length - 1));
           return;

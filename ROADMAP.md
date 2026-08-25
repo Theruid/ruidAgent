@@ -107,14 +107,21 @@ This document outlines the current state of CodingAgent, key architectural decis
 4. **Test & Diagnostic Runner**:
    - Shell-based test runners with output inspection.
 
-### Phase 3: Developer Experience & TUI Enhancements
-1. **Multi-line Input & External Editor Support**:
+### Phase 3: Developer Experience & TUI Enhancements (In Progress)
+1. **Interactive Agent Modes & Tab Cycling**:
+   - `code` (safe default with permissions), `plan` (read-only architecture planning), and `auto` (autonomous execution with pre-granted permissions).
+   - Pressing **`Tab`** cycles between modes; `/mode <code|plan|auto>` allows explicit switching.
+   - Status bar mode badge (`[CODE]`, `[PLAN]`, `[AUTO]`).
+2. **Live TaskPanel UI Component**:
+   - Real-time plan checklist rendering with state indicators (`✓`, `⠋`, `○`).
+   - Syncs automatically when agent invokes `task_create` and `task_update`.
+3. **Multi-line Input & External Editor Support**:
    - Multi-line editing and `$EDITOR` spawning in `InputBox`.
-2. **Path & Command Autocomplete**:
+4. **Path & Command Autocomplete**:
    - Tab completion for file paths in workspace and slash commands in palette.
-3. **Enhanced Interactive Diff & Rollback**:
+5. **Enhanced Interactive Diff & Rollback**:
    - Side-by-side / color-coded diff inspection in permission prompt with rollback capability.
-4. **Session Export**:
+6. **Session Export**:
    - `/export` command to export full session transcript to Markdown / HTML.
 
 ### Phase 4: Sub-Agents & Extensibility

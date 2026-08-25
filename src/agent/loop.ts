@@ -10,6 +10,7 @@ import { Workspace } from "../tools/fs.js";
 import { createDeferredPermissions, type PermissionManager } from "../permissions.js";
 import { buildSystemPrompt } from "./systemPrompt.js";
 import { compactHistory, estimateHistoryTokens } from "./context.js";
+import { TaskStore, type AgentTask } from "../tools/tasks.js";
 
 export interface LoopOptions {
   provider: LLMProvider;
@@ -23,6 +24,7 @@ export interface LoopOptions {
   signal?: AbortSignal;
   onEvent?: (event: LoopEvent) => void;
   maxContextTokens?: number;
+  taskStore?: TaskStore;
 }
 
 export type LoopEvent =
@@ -32,13 +34,15 @@ export type LoopEvent =
   | { type: "permission_request"; name: string; input?: unknown }
   | { type: "permission_denied"; name: string }
   | { type: "usage"; inputTokens: number; outputTokens: number; durationMs?: number }
-  | { type: "iteration"; count: number };
+  | { type: "iteration"; count: number }
+  | { type: "tasks_updated"; tasks: AgentTask[] };
 
 // Runs the agentic loop to completion and returns the full message history
 // so the REPL can continue the conversation across turns.
 export async function runAgentLoop(options: LoopOptions): Promise<LLMMessage[]> {
   const ws = new Workspace(options.workspaceRoot ?? process.cwd());
-  const registry = buildRegistry(ws);
+  const taskStore = options.taskStore ?? new TaskStore();
+  const registry = buildRegistry(ws, taskStore);
   const permissions =
     options.permissions ??
     createDeferredPermissions(
@@ -63,7 +67,7 @@ export async function runAgentLoop(options: LoopOptions): Promise<LLMMessage[]> 
     messages.push({ role: "user", content: [{ type: "text", text: options.initialPrompt }] });
   }
 
-  const systemPrompt = buildSystemPrompt(ws.root, process.platform);
+  const systemPrompt = buildSystemPrompt(ws.root, process.platform, permissions.getMode?.() ?? "code");
 
   for (let iteration = 1; iteration <= maxIterations; iteration++) {
     options.onEvent?.({ type: "iteration", count: iteration });
@@ -167,6 +171,11 @@ export async function runAgentLoop(options: LoopOptions): Promise<LLMMessage[]> 
 
       options.onEvent?.({ type: "tool_start", name: call.name, input: call.input });
       const result = await dispatch(registry, call.name, call.input);
+
+      if (call.name.startsWith("task_")) {
+        options.onEvent?.({ type: "tasks_updated", tasks: taskStore.list() });
+      }
+
       options.onEvent?.({
         type: "tool_result",
         name: call.name,

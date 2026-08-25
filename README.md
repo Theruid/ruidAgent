@@ -83,6 +83,9 @@ One-shot mode requires a TTY-free environment only for `-p`; interactive mode ne
 
 | Command | Action |
 |---|---|
+| `Tab` (in prompt) | Cycle agent mode (`[CODE]` → `[PLAN]` → `[AUTO]`) |
+| `/mode <code\|plan\|auto>` | Switch agent operating mode |
+| `/tasks` or `/plan` | View currently active plan and tasks |
 | `/new` | Start a new chat (autosaves the current one) |
 | `/resume` or `/sessions` | Open the session picker |
 | `/setup` | Provider setup wizard (connects immediately) |
@@ -93,7 +96,13 @@ One-shot mode requires a TTY-free environment only for `-p`; interactive mode ne
 | `/exit`, `/quit` | Save and exit |
 | `/help` | List commands |
 
-Keyboard: PageUp/PageDown scroll, Ctrl+arrows fine-scroll, Ctrl+C aborts the running turn (twice quickly exits).
+Keyboard: `Tab` cycles modes, PageUp/PageDown scroll, Ctrl+arrows fine-scroll, Ctrl+C aborts the running turn (twice quickly exits).
+
+## Operating modes
+
+- **`CODE` Mode** (Default): Standard safe mode. Read-only tools are auto-approved; mutating tools (`write_file`, `edit_file`, `bash`) require human confirmation.
+- **`PLAN` Mode**: Read-only architecture mode. Mutating file tools are disallowed; the agent explores code and uses `task_create`/`task_update` to create structured plans.
+- **`AUTO` Mode**: Autonomous execution. All tools are pre-approved without prompts for fast iteration.
 
 ## Tools & permissions
 
@@ -101,11 +110,17 @@ Keyboard: PageUp/PageDown scroll, Ctrl+arrows fine-scroll, Ctrl+C aborts the run
 |---|---|---|
 | `read_file` | Read a text file (line numbers, 512 KB cap, binary sniffing) | auto-approved |
 | `list_dir` | Directory listing | auto-approved |
-| `glob` | Filename pattern search | auto-approved |
+| `glob` | Filename pattern search (Node >= 20 zero-dep) | auto-approved |
 | `grep` | Regex content search | auto-approved |
-| `write_file` | Create/overwrite a file | prompts |
-| `edit_file` | Exact-match string replace | prompts |
-| `bash` | Shell command in workspace root (2 min default timeout, 200 KB output cap) | prompts |
+| `git_status` | Working tree status | auto-approved |
+| `git_diff` | Staged and unstaged diffs | auto-approved |
+| `git_log` | Commit history | auto-approved |
+| `task_create` | Add plan/task items | auto-approved |
+| `task_update` | Update task status (`in_progress`, `completed`) | auto-approved |
+| `task_list` | View plan checklist | auto-approved |
+| `write_file` | Create/overwrite a file | prompts in code mode |
+| `edit_file` | Exact-match string replace | prompts in code mode |
+| `bash` | Shell command in workspace root (2 min default timeout, 200 KB output cap) | prompts in code mode |
 
 When prompted: `y` approves once, `n` denies (the model is told not to retry), `a` whitelists the tool for the rest of the session.
 

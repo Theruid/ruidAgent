@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Box, Text } from "ink";
 import type { SessionUsage } from "../store.js";
+import type { AgentMode } from "../../permissions.js";
 import { formatTokenCount, formatCost, formatLatency } from "../utils/pricing.js";
 
 const SPIN = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏";
@@ -11,6 +12,8 @@ export function StatusBar({
   connected,
   msgCount,
   running,
+  mode = "code",
+  taskCount = 0,
   usage,
   lastTurnLatencyMs,
 }: {
@@ -19,6 +22,8 @@ export function StatusBar({
   connected: boolean;
   msgCount: number;
   running: boolean;
+  mode?: AgentMode;
+  taskCount?: number;
   usage?: SessionUsage;
   lastTurnLatencyMs?: number;
 }) {
@@ -35,11 +40,24 @@ export function StatusBar({
   const costStr = usage ? formatCost(usage.totalCost) : "$0.00";
   const latencyStr = lastTurnLatencyMs ? formatLatency(lastTurnLatencyMs) : null;
 
+  let modeColor = "cyan";
+  let modeLabel = "CODE";
+  if (mode === "plan") {
+    modeColor = "magenta";
+    modeLabel = "PLAN";
+  } else if (mode === "auto") {
+    modeColor = "green";
+    modeLabel = "AUTO";
+  }
+
   return (
     <Box justifyContent="space-between" paddingX={1} marginTop={0}>
       <Box>
+        <Text color={modeColor} bold>
+          [{modeLabel}]
+        </Text>
         <Text dimColor>
-          {connected ? `${providerName} · ${model || "(no model)"}` : "not connected — /setup"}
+          {" "}{connected ? `${providerName} · ${model || "(no model)"}` : "not connected — /setup"}
         </Text>
       </Box>
 
@@ -55,7 +73,8 @@ export function StatusBar({
       <Box>
         <Text dimColor>
           {running ? `${SPIN[frame % SPIN.length]} ` : ""}
-          {msgCount} msgs
+          {taskCount > 0 ? `${taskCount} tasks · ` : ""}
+          {msgCount} msgs · <Text color="yellow">Tab: mode</Text>
         </Text>
       </Box>
     </Box>

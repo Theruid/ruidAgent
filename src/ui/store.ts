@@ -1,5 +1,7 @@
 import type { LoopEvent } from "../agent/loop.js";
 import type { LLMMessage } from "../providers/types.js";
+import type { AgentMode } from "../permissions.js";
+import type { AgentTask } from "../tools/tasks.js";
 import { calculateCost } from "./utils/pricing.js";
 import { formatToolBadge } from "./utils/toolSummary.js";
 
@@ -37,6 +39,7 @@ export interface SessionUsage {
 
 export interface UIState {
   phase: Phase;
+  mode: AgentMode;
   providerName: string;
   model: string;
   connected: boolean;
@@ -48,6 +51,7 @@ export interface UIState {
   scrollOffset: number; // 0 = at bottom (latest messages), >0 = scrolled up N lines
   sessionUsage: SessionUsage;
   lastTurnDurationMs: number;
+  tasks: AgentTask[];
 }
 
 // Framework-free store so non-React code (agent loop callbacks) can push
@@ -80,9 +84,10 @@ export class AgentUIStore {
   private nextId = 1;
   private toolStartTimes = new Map<string, number>();
 
-  constructor(providerName: string, model: string, connected: boolean) {
+  constructor(providerName: string, model: string, connected: boolean, initialMode: AgentMode = "code") {
     this.state = {
       phase: "idle",
+      mode: initialMode,
       providerName,
       model,
       connected,
@@ -98,6 +103,7 @@ export class AgentUIStore {
         totalCost: 0,
       },
       lastTurnDurationMs: 0,
+      tasks: [],
     };
   }
 
@@ -135,6 +141,22 @@ export class AgentUIStore {
   }
 
   // ---- lifecycle ----
+
+  setMode(mode: AgentMode): void {
+    this.set({ mode }, true);
+  }
+
+  cycleMode(): AgentMode {
+    const order: AgentMode[] = ["code", "plan", "auto"];
+    const nextIdx = (order.indexOf(this.state.mode) + 1) % order.length;
+    const nextMode = order[nextIdx];
+    this.setMode(nextMode);
+    return nextMode;
+  }
+
+  setTasks(tasks: AgentTask[]): void {
+    this.set({ tasks }, true);
+  }
 
   setScrollOffset(offset: number): void {
     this.set({ scrollOffset: Math.max(0, offset) }, true);
@@ -308,6 +330,10 @@ export class AgentUIStore {
         );
         break;
       }
+
+      case "tasks_updated":
+        this.set({ tasks: e.tasks }, true);
+        break;
 
       case "iteration":
         break;
