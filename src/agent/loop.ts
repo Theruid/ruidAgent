@@ -9,6 +9,7 @@ import { buildRegistry, dispatch, toToolDefs } from "../tools/registry.js";
 import { Workspace } from "../tools/fs.js";
 import { createDeferredPermissions, type PermissionManager } from "../permissions.js";
 import { buildSystemPrompt } from "./systemPrompt.js";
+import { compactHistory, estimateHistoryTokens } from "./context.js";
 
 export interface LoopOptions {
   provider: LLMProvider;
@@ -21,6 +22,7 @@ export interface LoopOptions {
   permissions?: PermissionManager;
   signal?: AbortSignal;
   onEvent?: (event: LoopEvent) => void;
+  maxContextTokens?: number;
 }
 
 export type LoopEvent =
@@ -41,8 +43,9 @@ export async function runAgentLoop(options: LoopOptions): Promise<LLMMessage[]> 
     options.permissions ??
     createDeferredPermissions(new Set(["read_file", "list_dir", "glob", "grep"])).manager;
   const maxIterations = options.maxIterations ?? 40;
+  const maxContextTokens = options.maxContextTokens ?? 80_000;
 
-  const messages: LLMMessage[] = [...(options.messages ?? [])];
+  let messages: LLMMessage[] = [...(options.messages ?? [])];
   if (options.initialPrompt) {
     messages.push({ role: "user", content: [{ type: "text", text: options.initialPrompt }] });
   }
@@ -51,6 +54,11 @@ export async function runAgentLoop(options: LoopOptions): Promise<LLMMessage[]> 
 
   for (let iteration = 1; iteration <= maxIterations; iteration++) {
     options.onEvent?.({ type: "iteration", count: iteration });
+
+    // Auto-compact history if estimated tokens exceed safety threshold
+    if (estimateHistoryTokens(messages) > maxContextTokens) {
+      messages = compactHistory(messages, 4);
+    }
 
     const req: CompletionRequest = {
       system: systemPrompt,

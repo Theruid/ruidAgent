@@ -169,13 +169,116 @@ export function listDirTool(ws: Workspace) {
   };
 }
 
-// Bounded recursive glob so a broad pattern can't walk node_modules forever.
-function globSearch(rootAbs: string, pattern: string, maxResults: number): string[] {
-  const { globSync } = require("node:fs") as { globSync?: Function };
-  if (typeof globSync !== "function") {
-    throw new Error("globSync requires Node >= 22");
+const DEFAULT_IGNORE_DIRS = new Set([
+  "node_modules",
+  ".git",
+  "dist",
+  "build",
+  "out",
+  ".next",
+  ".venv",
+  "venv",
+  "__pycache__",
+  ".cache",
+  ".turbo",
+  ".idea",
+  ".vscode",
+]);
+
+/**
+ * Converts standard glob patterns (*, **, ?, {a,b}) to a RegExp.
+ */
+export function globPatternToRegex(pattern: string): RegExp {
+  // Normalize Windows backslashes
+  let p = pattern.replace(/\\/g, "/").trim();
+  // Strip leading ./ if present
+  if (p.startsWith("./")) p = p.slice(2);
+
+  let regexStr = "";
+  let i = 0;
+  while (i < p.length) {
+    const c = p[i];
+    if (c === "*" && p[i + 1] === "*") {
+      // ** matches across directories
+      if (p[i + 2] === "/") {
+        regexStr += "(?:.+/)?";
+        i += 3;
+      } else {
+        regexStr += ".*";
+        i += 2;
+      }
+    } else if (c === "*") {
+      // * matches anything except path separator
+      regexStr += "[^/]*";
+      i++;
+    } else if (c === "?") {
+      regexStr += "[^/]";
+      i++;
+    } else if (c === "{" || c === "}") {
+      // Brace expansion {ts,tsx} -> (ts|tsx)
+      regexStr += c === "{" ? "(" : ")";
+      i++;
+    } else if (c === "," && regexStr.includes("(")) {
+      regexStr += "|";
+      i++;
+    } else if (/[.+^$|()[\]\\]/.test(c)) {
+      regexStr += "\\" + c;
+      i++;
+    } else {
+      regexStr += c;
+      i++;
+    }
   }
-  const results = globSync(pattern, { cwd: rootAbs }) as string[];
+
+  return new RegExp(`^${regexStr}$`, "i");
+}
+
+/**
+ * Pure Node.js recursive directory walker that matches glob patterns
+ * without depending on Node 22 fs.globSync.
+ */
+async function globSearch(rootAbs: string, pattern: string, maxResults: number): Promise<string[]> {
+  const matcher = globPatternToRegex(pattern);
+  const results: string[] = [];
+
+  // Check if pattern explicitly includes ignore dirs (e.g. node_modules/**)
+  const normPattern = pattern.replace(/\\/g, "/");
+  const searchingIgnored = Array.from(DEFAULT_IGNORE_DIRS).some(
+    (d) => normPattern.startsWith(`${d}/`) || normPattern.startsWith(`./${d}/`) || normPattern === d
+  );
+
+  async function walk(currentAbs: string): Promise<void> {
+    if (results.length >= maxResults) return;
+    let entries;
+    try {
+      entries = await fs.readdir(currentAbs, { withFileTypes: true });
+    } catch {
+      return;
+    }
+
+    for (const entry of entries) {
+      if (results.length >= maxResults) return;
+      if (!searchingIgnored && DEFAULT_IGNORE_DIRS.has(entry.name)) {
+        continue;
+      }
+
+      const entryAbs = path.join(currentAbs, entry.name);
+      const relPath = path.relative(rootAbs, entryAbs).replace(/\\/g, "/");
+
+      if (entry.isFile() || entry.isSymbolicLink()) {
+        if (matcher.test(relPath) || matcher.test(entry.name)) {
+          results.push(relPath);
+        }
+      } else if (entry.isDirectory()) {
+        if (matcher.test(relPath) || matcher.test(`${relPath}/`)) {
+          results.push(`${relPath}/`);
+        }
+        await walk(entryAbs);
+      }
+    }
+  }
+
+  await walk(rootAbs);
   return results.slice(0, maxResults);
 }
 
@@ -194,11 +297,9 @@ export function globTool(ws: Workspace) {
     async execute(args: { pattern: string }): Promise<string> {
       let results: string[];
       try {
-        results = globSearch(ws.root, args.pattern, 200);
+        results = await globSearch(ws.root, args.pattern, 200);
       } catch (e) {
-        throw new Error(
-          `Glob failed: ${e instanceof Error ? e.message : e}. Requires Node >= 22 for built-in fs.glob.`,
-        );
+        throw new Error(`Glob failed: ${e instanceof Error ? e.message : e}`);
       }
       if (results.length === 0) return `No files match "${args.pattern}"`;
       const suffix = results.length === 200 ? "\n(truncated at 200 results)" : "";

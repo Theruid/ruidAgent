@@ -6,6 +6,7 @@ import type {
   StreamEvent,
 } from "./types.js";
 import { sseDataLines } from "./types.js";
+import { fetchWithRetry } from "./retry.js";
 
 const ANTHROPIC_DEFAULT_BASE = "https://api.anthropic.com";
 
@@ -28,28 +29,40 @@ export function createAnthropicProvider(config: ProviderConfig): LLMProvider {
     config,
 
     async *complete(req: CompletionRequest): AsyncIterable<StreamEvent> {
-      const res = await fetch(`${baseUrl}/v1/messages`, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "x-api-key": apiKey,
-          "anthropic-version": "2023-06-01",
-          ...config.headers,
-        },
-        body: JSON.stringify({
-          model: req.model,
-          max_tokens: 8192,
-          system: req.system,
-          messages: req.messages.map(translateMessage),
-          tools: req.tools.map((t) => ({
-            name: t.name,
-            description: t.description,
-            input_schema: t.parameters,
-          })),
-          stream: true,
-        }),
-        signal: req.signal,
-      });
+      let res: Response;
+      try {
+        res = await fetchWithRetry(
+          `${baseUrl}/v1/messages`,
+          {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              "x-api-key": apiKey,
+              "anthropic-version": "2023-06-01",
+              ...config.headers,
+            },
+            body: JSON.stringify({
+              model: req.model,
+              max_tokens: 8192,
+              system: req.system,
+              messages: req.messages.map(translateMessage),
+              tools: req.tools.map((t) => ({
+                name: t.name,
+                description: t.description,
+                input_schema: t.parameters,
+              })),
+              stream: true,
+            }),
+          },
+          { signal: req.signal }
+        );
+      } catch (err) {
+        yield {
+          type: "error",
+          message: `Anthropic network connection failed: ${err instanceof Error ? err.message : String(err)}`,
+        };
+        return;
+      }
 
       if (!res.ok || !res.body) {
         const errText = await res.text().catch(() => res.statusText);

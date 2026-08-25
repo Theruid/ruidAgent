@@ -6,6 +6,7 @@ import type {
   StreamEvent,
 } from "./types.js";
 import { sseDataLines } from "./types.js";
+import { fetchWithRetry } from "./retry.js";
 
 // Works with any OpenAI-compatible /chat/completions endpoint:
 // OpenAI, DeepSeek, Groq, OpenRouter, Together, Mistral, Ollama (/v1), LM Studio, vLLM.
@@ -38,7 +39,7 @@ export async function listModels(config: ProviderConfig): Promise<string[]> {
   const headers: Record<string, string> = { ...config.headers };
   if (apiKey) headers["authorization"] = `Bearer ${apiKey}`;
 
-  const res = await fetch(`${baseUrl}/models`, { headers });
+  const res = await fetchWithRetry(`${baseUrl}/models`, { headers });
   if (!res.ok) {
     const errText = await res.text().catch(() => res.statusText);
     throw new Error(`${baseUrl}/models responded ${res.status}: ${errText.slice(0, 300)}`);
@@ -73,26 +74,38 @@ export function createOpenAIProvider(config: ProviderConfig): LLMProvider {
       };
       if (apiKey) headers["authorization"] = `Bearer ${apiKey}`;
 
-      const res = await fetch(`${baseUrl}/chat/completions`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          model: req.model,
-          stream: true,
-          stream_options: { include_usage: true },
-          messages: [
-            { role: "system", content: req.system },
-            ...req.messages.map(translateMessage),
-          ],
-          ...(req.tools.length > 0 && {
-            tools: req.tools.map((t) => ({
-              type: "function",
-              function: { name: t.name, description: t.description, parameters: t.parameters },
-            })),
-          }),
-        }),
-        signal: req.signal,
-      });
+      let res: Response;
+      try {
+        res = await fetchWithRetry(
+          `${baseUrl}/chat/completions`,
+          {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+              model: req.model,
+              stream: true,
+              stream_options: { include_usage: true },
+              messages: [
+                { role: "system", content: req.system },
+                ...req.messages.map(translateMessage),
+              ],
+              ...(req.tools.length > 0 && {
+                tools: req.tools.map((t) => ({
+                  type: "function",
+                  function: { name: t.name, description: t.description, parameters: t.parameters },
+                })),
+              }),
+            }),
+          },
+          { signal: req.signal }
+        );
+      } catch (err) {
+        yield {
+          type: "error",
+          message: `${baseUrl} network connection failed: ${err instanceof Error ? err.message : String(err)}`,
+        };
+        return;
+      }
 
       if (!res.ok || !res.body) {
         const errText = await res.text().catch(() => res.statusText);
