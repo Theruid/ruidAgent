@@ -156,19 +156,26 @@ export async function runAgentLoop(options: LoopOptions): Promise<LLMMessage[]> 
     const toolCalls = content.filter((c): c is Extract<typeof c, { type: "tool_call" }> => c.type === "tool_call");
     if (toolCalls.length === 0) break; // final text answer
 
-    // Dispatch all tool calls (including parallel subagent_spawn calls) simultaneously
+    // Phase 1: resolve permissions sequentially — the permission manager parks a
+    // single promise per request, so parallel checks would overwrite resolvers
+    // and deadlock Promise.all.
+    const approvals: boolean[] = [];
+    for (const call of toolCalls) {
+      const tool: AgentTool | undefined = registry.get(call.name);
+      const requiresPermission = tool?.requiresPermission ?? true;
+
+      if (!requiresPermission) {
+        approvals.push(true);
+        continue;
+      }
+      options.onEvent?.({ type: "permission_request", name: call.name, input: call.input });
+      approvals.push(await permissions.check(call.name, call.input));
+    }
+
+    // Phase 2: dispatch all approved work simultaneously (parallel subagents)
     const results = await Promise.all(
-      toolCalls.map(async (call) => {
-        const tool: AgentTool | undefined = registry.get(call.name);
-        const requiresPermission = tool?.requiresPermission ?? true;
-
-        let approved = true;
-        if (requiresPermission) {
-          options.onEvent?.({ type: "permission_request", name: call.name, input: call.input });
-          approved = await permissions.check(call.name, call.input);
-        }
-
-        if (!approved) {
+      toolCalls.map(async (call, i) => {
+        if (!approvals[i]) {
           options.onEvent?.({ type: "permission_denied", name: call.name });
           return {
             type: "tool_result" as const,
