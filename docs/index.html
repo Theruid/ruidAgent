@@ -842,7 +842,7 @@
           <ul class="roadmap-list">
             <li class="roadmap-item">
               <span class="r-icon done">✓</span>
-              <span>Standalone multi-LLM CLI engine (Claude, GPT, DeepSeek, Groq, Ollama)</span>
+              <span>Multi-provider engine with resilient retries & token stream separation</span>
             </li>
             <li class="roadmap-item">
               <span class="r-icon done">✓</span>
@@ -850,15 +850,15 @@
             </li>
             <li class="roadmap-item">
               <span class="r-icon done">✓</span>
-              <span>Parallel sub-agent swarm engine with isolated tokens</span>
+              <span>Parallel sub-agent swarm delegation with isolated context</span>
             </li>
             <li class="roadmap-item">
               <span class="r-icon done">✓</span>
-              <span>Turn snapshot history & instant <code>/rollback</code></span>
+              <span>Snapshot history with instant turn-level <code>/rollback</code></span>
             </li>
             <li class="roadmap-item">
               <span class="r-icon done">✓</span>
-              <span>Auto-updater with semver registry checker</span>
+              <span>In-place auto-updater with semver registry checking</span>
             </li>
           </ul>
         </div>
@@ -871,36 +871,48 @@
           <ul class="roadmap-list">
             <li class="roadmap-item">
               <span class="r-icon next">●</span>
-              <span>Model Context Protocol (MCP) client support (JSON-RPC stdio)</span>
+              <span>Model Context Protocol (MCP) client over stdio JSON-RPC</span>
             </li>
             <li class="roadmap-item">
               <span class="r-icon next">●</span>
-              <span>Dynamic external tool discovery from <code>mcp.json</code></span>
+              <span>Dynamic tool discovery and mounting from local config files</span>
             </li>
             <li class="roadmap-item">
               <span class="r-icon next">●</span>
-              <span>MCP tool permission integration into <code>[CODE]</code> mode</span>
+              <span>Granular permission policies for external tool executions</span>
             </li>
           </ul>
         </div>
 
-        <!-- Future -->
+        <!-- Future Feature Ideas -->
         <div class="roadmap-col future">
           <div class="roadmap-col-title">
-            <span>🔮 Future</span>
+            <span>🔮 Future Ideas</span>
           </div>
           <ul class="roadmap-list">
             <li class="roadmap-item">
               <span class="r-icon future">○</span>
-              <span>Native web search & live docs lookup</span>
+              <span>Live web search & real-time documentation retrieval for up-to-date APIs</span>
             </li>
             <li class="roadmap-item">
               <span class="r-icon future">○</span>
-              <span>Provider presets for GitHub Models & Together AI</span>
+              <span>AST-aware semantic code search and dependency graph navigation</span>
             </li>
             <li class="roadmap-item">
               <span class="r-icon future">○</span>
-              <span>Full-text search across past session histories</span>
+              <span>Automated test-driven repair loops (run test → inspect failure → patch → verify)</span>
+            </li>
+            <li class="roadmap-item">
+              <span class="r-icon future">○</span>
+              <span>Full-text transcript search & semantic session indexing in <code>/resume</code></span>
+            </li>
+            <li class="roadmap-item">
+              <span class="r-icon future">○</span>
+              <span>Headless CI/CD action runner with structured GitHub PR review outputs</span>
+            </li>
+            <li class="roadmap-item">
+              <span class="r-icon future">○</span>
+              <span>Custom hook pipelines for pre-tool and post-turn validations</span>
             </li>
           </ul>
         </div>
