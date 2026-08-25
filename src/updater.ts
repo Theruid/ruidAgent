@@ -34,7 +34,7 @@ export function getLocalPackageInfo(): { name: string; version: string } {
   } catch {
     // Fallback
   }
-  return { name: "@theruid/ruid", version: "0.1.6" };
+  return { name: "@theruid/ruid", version: "0.1.8" };
 }
 
 /**

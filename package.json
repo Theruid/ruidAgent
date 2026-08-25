@@ -1,6 +1,6 @@
 {
   "name": "@theruid/ruid",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "Standalone CLI coding agent — works with any LLM provider",
   "type": "module",
   "engines": {
