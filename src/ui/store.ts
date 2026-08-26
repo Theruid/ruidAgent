@@ -7,7 +7,7 @@ import { formatToolBadge } from "./utils/toolSummary.js";
 
 import type { UpdateInfo } from "../updater.js";
 
-export type Phase = "idle" | "running" | "picker" | "wizard";
+export type Phase = "idle" | "running" | "picker" | "wizard" | "model-picker" | "provider-picker";
 
 export interface ToolMeta {
   input?: Record<string, unknown>;

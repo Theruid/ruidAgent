@@ -18,13 +18,56 @@ const CONFIG_PATH = join(CONFIG_DIR, "config.json");
 
 export const DEFAULT_CONFIG: AppConfig = {
   providers: {
-    anthropic: { type: "anthropic", apiKeyEnv: "ANTHROPIC_API_KEY" },
-    openai: { type: "openai", baseUrl: "https://api.openai.com/v1", apiKeyEnv: "OPENAI_API_KEY" },
-    deepseek: { type: "openai", baseUrl: "https://api.deepseek.com", apiKeyEnv: "DEEPSEEK_API_KEY" },
-    groq: { type: "openai", baseUrl: "https://api.groq.com/openai/v1", apiKeyEnv: "GROQ_API_KEY" },
-    openrouter: { type: "openai", baseUrl: "https://openrouter.ai/api/v1", apiKeyEnv: "OPENROUTER_API_KEY" },
-    ollama: { type: "openai", baseUrl: "http://localhost:11434/v1" },
-    lmstudio: { type: "openai", baseUrl: "http://localhost:1234/v1" },
+    anthropic: {
+      type: "anthropic",
+      apiKeyEnv: "ANTHROPIC_API_KEY",
+      defaultModel: "claude-sonnet-5",
+      models: [
+        "claude-sonnet-5",
+        "claude-opus-5",
+        "claude-haiku-4-5-20251001",
+        "claude-3-5-sonnet-latest",
+        "claude-3-5-haiku-latest",
+        "claude-3-opus-latest",
+      ],
+    },
+    openai: {
+      type: "openai",
+      baseUrl: "https://api.openai.com/v1",
+      apiKeyEnv: "OPENAI_API_KEY",
+      defaultModel: "gpt-4o",
+      models: ["gpt-4o", "gpt-4o-mini", "o1", "o3-mini"],
+    },
+    deepseek: {
+      type: "openai",
+      baseUrl: "https://api.deepseek.com",
+      apiKeyEnv: "DEEPSEEK_API_KEY",
+      defaultModel: "deepseek-chat",
+      models: ["deepseek-chat", "deepseek-reasoner"],
+    },
+    groq: {
+      type: "openai",
+      baseUrl: "https://api.groq.com/openai/v1",
+      apiKeyEnv: "GROQ_API_KEY",
+      defaultModel: "llama-3.3-70b-versatile",
+      models: ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768"],
+    },
+    openrouter: {
+      type: "openai",
+      baseUrl: "https://openrouter.ai/api/v1",
+      apiKeyEnv: "OPENROUTER_API_KEY",
+      defaultModel: "anthropic/claude-3.5-sonnet",
+    },
+    ollama: {
+      type: "openai",
+      baseUrl: "http://localhost:11434/v1",
+      defaultModel: "llama3.2",
+    },
+    lmstudio: {
+      type: "openai",
+      baseUrl: "http://localhost:1234/v1",
+      defaultModel: "local-model",
+    },
   },
   default: { provider: "anthropic", model: "claude-sonnet-5" },
 };
@@ -38,14 +81,53 @@ export function loadConfig(overrides?: Partial<AppConfig>): AppConfig {
       console.warn(`Warning: could not parse ${CONFIG_PATH}: ${e instanceof Error ? e.message : e}`);
     }
   }
+
+  const mergedProviders: Record<string, ProviderConfig> = {};
+  const allProviderKeys = new Set([
+    ...Object.keys(DEFAULT_CONFIG.providers),
+    ...Object.keys(fileConfig.providers ?? {}),
+    ...Object.keys(overrides?.providers ?? {}),
+  ]);
+
+  for (const key of allProviderKeys) {
+    const base = DEFAULT_CONFIG.providers[key] ?? {};
+    const fromFile = fileConfig.providers?.[key] ?? {};
+    const fromOverrides = overrides?.providers?.[key] ?? {};
+    mergedProviders[key] = {
+      ...base,
+      ...fromFile,
+      ...fromOverrides,
+    } as ProviderConfig;
+  }
+
   return {
     ...DEFAULT_CONFIG,
     ...fileConfig,
     ...overrides,
-    providers: { ...DEFAULT_CONFIG.providers, ...fileConfig.providers },
+    providers: mergedProviders,
     default: overrides?.default ?? fileConfig.default ?? DEFAULT_CONFIG.default,
     permissions: { ...(fileConfig.permissions ?? {}), ...(overrides?.permissions ?? {}) },
   };
+}
+
+export function resolveProviderModel(
+  providerName: string,
+  cfg?: ProviderConfig,
+  appConfig?: AppConfig,
+  explicitModel?: string,
+): string {
+  if (explicitModel && explicitModel.trim()) return explicitModel.trim();
+  if (cfg?.defaultModel && cfg.defaultModel.trim()) return cfg.defaultModel.trim();
+  if (appConfig?.default?.provider === providerName && appConfig.default.model?.trim()) {
+    return appConfig.default.model.trim();
+  }
+  if (cfg?.models && cfg.models.length > 0 && cfg.models[0].trim()) {
+    return cfg.models[0].trim();
+  }
+  const defaultPreset = DEFAULT_CONFIG.providers[providerName];
+  if (defaultPreset?.defaultModel) return defaultPreset.defaultModel;
+  if (cfg?.type === "anthropic") return "claude-sonnet-5";
+  return "";
 }
 
 export function ensureConfigDir(): string {

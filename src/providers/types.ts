@@ -64,6 +64,8 @@ export interface ProviderConfig {
   apiKeyEnv?: string;
   apiKey?: string; // inline key (not recommended, but supported)
   headers?: Record<string, string>;
+  defaultModel?: string;
+  models?: string[];
 }
 
 export interface LLMProvider {

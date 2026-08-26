@@ -10,6 +10,20 @@ import { fetchWithRetry } from "./retry.js";
 
 const ANTHROPIC_DEFAULT_BASE = "https://api.anthropic.com";
 
+export const ANTHROPIC_MODELS: string[] = [
+  "claude-sonnet-5",
+  "claude-opus-5",
+  "claude-haiku-4-5-20251001",
+  "claude-3-5-sonnet-latest",
+  "claude-3-5-haiku-latest",
+  "claude-3-opus-latest",
+];
+
+export async function listModels(config?: ProviderConfig): Promise<string[]> {
+  const custom = config?.models ?? [];
+  return [...new Set([...custom, ...ANTHROPIC_MODELS])];
+}
+
 export function createAnthropicProvider(config: ProviderConfig): LLMProvider {
   const apiKey =
     config.apiKey ??

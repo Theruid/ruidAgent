@@ -8,9 +8,12 @@ import { StatusBar } from "./components/StatusBar.js";
 import { PermissionPrompt } from "./components/PermissionPrompt.js";
 import { SessionPicker } from "./components/SessionPicker.js";
 import { SetupWizard } from "./components/SetupWizard.js";
+import { ModelPicker } from "./components/ModelPicker.js";
+import { ProviderPicker } from "./components/ProviderPicker.js";
 import { TaskPanel } from "./components/TaskPanel.js";
 import { UpdatePrompt } from "./components/UpdatePrompt.js";
 import { performUpdate } from "../updater.js";
+import { loadConfig } from "../config.js";
 
 /** Terminal dimensions with resize tracking. */
 function useTerminalDimensions(): { rows: number; columns: number } {
@@ -43,10 +46,22 @@ export interface AppProps {
   /** Session picker callbacks */
   onPickSession(id: string | null): void;
   onSetupDone(): void;
+  onPickModel(model: string | null): void;
+  onPickProvider(providerName: string | null): void;
   onCycleMode?(): void;
 }
 
-export function App({ store, onSubmit, onAbortTurn, onExit, onPickSession, onSetupDone, onCycleMode }: AppProps) {
+export function App({
+  store,
+  onSubmit,
+  onAbortTurn,
+  onExit,
+  onPickSession,
+  onSetupDone,
+  onPickModel,
+  onPickProvider,
+  onCycleMode,
+}: AppProps) {
   const state: UIState = useSyncExternalStore(store.subscribe, store.getState);
   const { rows, columns } = useTerminalDimensions();
   const exitIntent = useRef<number>(0);
@@ -133,6 +148,8 @@ export function App({ store, onSubmit, onAbortTurn, onExit, onPickSession, onSet
   let overhead = 1; // StatusBar (1 line)
   if (state.phase === "picker" || state.phase === "wizard") {
     overhead += 10;
+  } else if (state.phase === "model-picker" || state.phase === "provider-picker") {
+    overhead += 16;
   } else {
     // InputBox: border (2 lines) + content lines
     const inputLines = state.inputDraft ? state.inputDraft.split("\n").length : 1;
@@ -147,6 +164,8 @@ export function App({ store, onSubmit, onAbortTurn, onExit, onPickSession, onSet
   }
 
   const viewportHeight = Math.max(5, rows - overhead);
+  const currentConfig = loadConfig();
+  const activeProviderConfig = currentConfig.providers[state.providerName];
 
   return (
     <Box flexDirection="column" height={rows} paddingX={1}>
@@ -184,6 +203,18 @@ export function App({ store, onSubmit, onAbortTurn, onExit, onPickSession, onSet
         <SessionPicker onPick={onPickSession} />
       ) : state.phase === "wizard" ? (
         <SetupWizard onDone={onSetupDone} />
+      ) : state.phase === "model-picker" ? (
+        <ModelPicker
+          providerName={state.providerName}
+          providerConfig={activeProviderConfig}
+          currentModel={state.model}
+          onPick={onPickModel}
+        />
+      ) : state.phase === "provider-picker" ? (
+        <ProviderPicker
+          activeProviderName={state.providerName}
+          onPick={onPickProvider}
+        />
       ) : (
         <InputBox
           onSubmit={onSubmit}

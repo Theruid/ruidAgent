@@ -1,7 +1,7 @@
 import React from "react";
 import { render } from "ink";
 import type { LLMProvider, ProviderConfig, LLMMessage } from "../providers/types.js";
-import { isProviderUsable, loadConfig } from "../config.js";
+import { isProviderUsable, loadConfig, resolveProviderModel } from "../config.js";
 import { createProvider } from "../index.js";
 import { runAgentLoop } from "../agent/loop.js";
 import {
@@ -110,6 +110,8 @@ export function startTui(options: TuiOptions): void {
         store.setPhase("idle");
         tryConnect();
       }}
+      onPickModel={pickModel}
+      onPickProvider={pickProvider}
       onCycleMode={() => {
         const nextMode = store.cycleMode();
         permissions.setMode(nextMode);
@@ -133,6 +135,22 @@ export function startTui(options: TuiOptions): void {
     process.exit(0);
   }
 
+  function pickModel(chosenModel: string | null): void {
+    store.setPhase("idle");
+    if (chosenModel) {
+      model = chosenModel;
+      store.setConnection(active?.name ?? "", model, active !== null);
+      store.setNotice(`Model switched to ${model}`);
+    }
+  }
+
+  function pickProvider(chosenProvider: string | null): void {
+    store.setPhase("idle");
+    if (chosenProvider) {
+      tryConnect(chosenProvider);
+    }
+  }
+
   function abortTurn(): void {
     abortController?.abort();
   }
@@ -154,7 +172,9 @@ export function startTui(options: TuiOptions): void {
           );
           return;
         }
-        resolved = { name: wantName, cfg: config.providers[wantName], model: config.default.model };
+        const targetCfg = config.providers[wantName];
+        const targetModel = resolveProviderModel(wantName, targetCfg, config);
+        resolved = { name: wantName, cfg: targetCfg, model: targetModel };
       }
       if (!isProviderUsable(resolved.cfg)) {
         store.setNotice(`"${resolved.name}" has no API key. Run /setup or export the env var.`);
@@ -292,28 +312,13 @@ export function startTui(options: TuiOptions): void {
         break;
 
       case "providers": {
-        const config = loadConfig();
-        const lines = Object.entries(config.providers).map(([pname, pcfg]) => {
-          const marker =
-            active?.name === pname ? " <connected>" : config.default.provider === pname ? " *default*" : "";
-          const keyInfo =
-            pcfg.type === "openai"
-              ? pcfg.apiKey
-                ? "inline key"
-                : pcfg.apiKeyEnv
-                  ? `$${pcfg.apiKeyEnv}`
-                  : "no key"
-              : "native";
-          const usable = isProviderUsable(pcfg) ? "" : " (key missing)";
-          return `${pname}${marker}${usable} — ${pcfg.type} [${keyInfo}]`;
-        });
-        store.setNotice(lines.join(" · ") || "No providers configured.");
+        store.setPhase("provider-picker");
         break;
       }
 
       case "connect":
         if (!rest[0]) {
-          store.setNotice("Usage: /connect <provider-name>");
+          store.setPhase("provider-picker");
           break;
         }
         tryConnect(rest[0]);
@@ -334,7 +339,11 @@ export function startTui(options: TuiOptions): void {
           store.setConnection(active?.name ?? "", model, active !== null);
           store.setNotice(`Model set to ${model}`);
         } else {
-          store.setNotice(`Current model: ${model || "(unset)"}`);
+          if (!active) {
+            store.setNotice("No provider connected — run /setup or /connect first.");
+          } else {
+            store.setPhase("model-picker");
+          }
         }
         break;
 

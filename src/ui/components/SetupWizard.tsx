@@ -20,19 +20,71 @@ type Step =
 export function SetupWizard({ onDone }: { onDone(): void }) {
   const [step, setStep] = useState<Step>({ t: "menu" });
   const [input, setInput] = useState("");
+  const [selectedModelIdx, setSelectedModelIdx] = useState(0);
+
+  const rawModels = step.t === "models" && step.models ? step.models : [];
+  const query = step.t === "models" ? input.trim().toLowerCase() : "";
+  const isNumericQuery = /^\d+$/.test(query);
+
+  const filteredModels =
+    step.t === "models" && rawModels.length > 0
+      ? query && !isNumericQuery
+        ? rawModels.filter((m) => m.toLowerCase().includes(query))
+        : rawModels
+      : [];
+
+  const maxVisibleModels = 10;
+  const totalModels = filteredModels.length;
+  const clampedModelIdx = Math.min(Math.max(0, selectedModelIdx), Math.max(0, totalModels - 1));
+  const modelStartIdx = Math.max(
+    0,
+    Math.min(clampedModelIdx - Math.floor(maxVisibleModels / 2), totalModels - maxVisibleModels),
+  );
+  const visibleModels = filteredModels.slice(modelStartIdx, modelStartIdx + maxVisibleModels);
+  const modelsAbove = modelStartIdx;
+  const modelsBelow = Math.max(0, totalModels - (modelStartIdx + visibleModels.length));
 
   useInput((data, key) => {
-    if (key.upArrow || key.downArrow) return;
+    if (step.t === "models" && totalModels > 0) {
+      if (key.upArrow) {
+        setSelectedModelIdx((i) => Math.max(0, i - 1));
+        return;
+      }
+      if (key.downArrow) {
+        setSelectedModelIdx((i) => Math.min(totalModels - 1, i + 1));
+        return;
+      }
+      if (key.pageUp) {
+        setSelectedModelIdx((i) => Math.max(0, i - maxVisibleModels));
+        return;
+      }
+      if (key.pageDown) {
+        setSelectedModelIdx((i) => Math.min(totalModels - 1, i + maxVisibleModels));
+        return;
+      }
+    } else {
+      if (key.upArrow || key.downArrow || key.pageUp || key.pageDown) return;
+    }
 
     if (key.escape) {
+      if (step.t === "models" && input.length > 0) {
+        setInput("");
+        setSelectedModelIdx(0);
+        return;
+      }
       if (step.t === "menu") onDone();
       else setStep({ t: "menu" });
       setInput("");
+      setSelectedModelIdx(0);
       return;
     }
 
     if (key.backspace || key.delete) {
-      setInput((v) => v.slice(0, -1));
+      setInput((v) => {
+        const next = v.slice(0, -1);
+        if (step.t === "models") setSelectedModelIdx(0);
+        return next;
+      });
       return;
     }
 
@@ -44,7 +96,11 @@ export function SetupWizard({ onDone }: { onDone(): void }) {
     }
 
     if (key.ctrl) return;
-    setInput((v) => v + data.replace(/\r?\n/g, ""));
+    setInput((v) => {
+      const next = v + data.replace(/\r?\n/g, "");
+      if (step.t === "models") setSelectedModelIdx(0);
+      return next;
+    });
   });
 
   async function advance(cur: Step, line: string): Promise<void> {
@@ -88,7 +144,16 @@ export function SetupWizard({ onDone }: { onDone(): void }) {
         if (cur.loading) return;
         if (cur.error) return setStep({ t: "menu" });
         let modelId = line;
-        if (/^\d+$/.test(line) && cur.models) modelId = cur.models[parseInt(line, 10) - 1];
+        if (/^\d+$/.test(line) && rawModels.length > 0) {
+          const num = parseInt(line, 10);
+          if (num >= 1 && num <= rawModels.length) {
+            modelId = rawModels[num - 1];
+          }
+        } else if (filteredModels.length > 0) {
+          modelId = filteredModels[clampedModelIdx];
+        } else if (rawModels.length > 0) {
+          modelId = rawModels[0];
+        }
         if (!modelId) return;
         const config = loadConfigFile();
         addProvider(config, {
@@ -96,6 +161,8 @@ export function SetupWizard({ onDone }: { onDone(): void }) {
           baseUrl: cur.url,
           apiKey: cur.key,
           apiKeyEnv: stepState.envName,
+          defaultModel: modelId,
+          models: rawModels,
         });
         setDefault(config, cur.name!, modelId);
         stepState.envName = undefined;
@@ -125,7 +192,7 @@ export function SetupWizard({ onDone }: { onDone(): void }) {
       case "models":
         if (step.loading) return "Fetching models…";
         if (step.error) return `Fetch failed (${step.error}) — press Enter to go back`;
-        return "Pick a model by number or type an ID:";
+        return `Type to filter · ↑↓ scroll · Enter pick highlighted · or number (1-${rawModels.length}):`;
       case "done":
         return "Press Enter to continue";
       default:
@@ -135,19 +202,43 @@ export function SetupWizard({ onDone }: { onDone(): void }) {
 
   return (
     <Box borderStyle="round" borderColor="cyan" paddingX={1} flexDirection="column">
-      <Text bold color="cyan">
-        Provider setup
-      </Text>
+      <Box justifyContent="space-between">
+        <Text bold color="cyan">
+          Provider setup
+        </Text>
+        {step.t === "models" && rawModels.length > 0 && (
+          <Text dimColor>
+            {query && !isNumericQuery
+              ? `Showing ${visibleModels.length} of ${totalModels} matching '${query}' (${rawModels.length} total)`
+              : `Showing ${modelStartIdx + 1}-${modelStartIdx + visibleModels.length} of ${rawModels.length}`}
+          </Text>
+        )}
+      </Box>
       <Text dimColor>{promptText}</Text>
-      {step.t === "models" && step.models && (
+      {step.t === "models" && filteredModels.length > 0 && (
         <Box flexDirection="column" paddingLeft={1}>
-          {step.models.slice(0, 10).map((m, i) => (
-            <Text key={m}>
-              {" "}
-              {i + 1}) {m}
-            </Text>
-          ))}
-          {step.models.length > 10 && <Text dimColor> …and {step.models.length - 10} more</Text>}
+          {modelsAbove > 0 && (
+            <Text dimColor> ↑ {modelsAbove} more model{modelsAbove > 1 ? "s" : ""} above (↑/PgUp)</Text>
+          )}
+          {visibleModels.map((m, i) => {
+            const actualIdx = modelStartIdx + i;
+            const isSelected = actualIdx === clampedModelIdx;
+            const originalIdx = rawModels.indexOf(m) + 1;
+            return (
+              <Text key={m} color={isSelected ? "cyanBright" : undefined} bold={isSelected}>
+                {isSelected ? "> " : "  "}
+                {originalIdx > 0 ? `${originalIdx}) ` : ""}{m}
+              </Text>
+            );
+          })}
+          {modelsBelow > 0 && (
+            <Text dimColor> ↓ {modelsBelow} more model{modelsBelow > 1 ? "s" : ""} below (↓/PgDn)</Text>
+          )}
+        </Box>
+      )}
+      {step.t === "models" && !step.loading && !step.error && filteredModels.length === 0 && (
+        <Box paddingLeft={1}>
+          <Text color="yellow">No models matching &quot;{query}&quot;</Text>
         </Box>
       )}
       {step.t !== "models" || (!step.loading && !step.error) ? (
