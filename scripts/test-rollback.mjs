@@ -6,7 +6,7 @@ import { Workspace, writeFileTool, editFileTool } from "../dist/tools/fs.js";
 import { SnapshotManager, rollbackTool } from "../dist/tools/snapshot.js";
 
 async function testRollback() {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "codingagent-rollback-test-"));
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "ruid-rollback-test-"));
   const ws = new Workspace(tmpDir);
   const snapshots = new SnapshotManager();
 

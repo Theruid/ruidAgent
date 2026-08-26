@@ -64,7 +64,7 @@ export function createOpenAIProvider(config: ProviderConfig): LLMProvider {
   const baseUrl = resolveBaseUrl(config);
 
   return {
-    name: `openai-compatible (${baseUrl})`,
+    name: "openai-compatible",
     config,
 
     async *complete(req: CompletionRequest): AsyncIterable<StreamEvent> {

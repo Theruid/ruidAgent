@@ -13,7 +13,7 @@ export interface AppConfig {
   maxIterations?: number;
 }
 
-const CONFIG_DIR = join(homedir(), ".codingagent");
+const CONFIG_DIR = join(homedir(), ".ruid");
 const CONFIG_PATH = join(CONFIG_DIR, "config.json");
 
 export const DEFAULT_CONFIG: AppConfig = {

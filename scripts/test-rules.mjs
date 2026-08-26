@@ -5,7 +5,7 @@ import path from "node:path";
 import os from "node:os";
 
 async function testProjectInstructions() {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "codingagent-rules-test-"));
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "ruid-rules-test-"));
   try {
     // With no rule files
     const emptyPrompt = buildSystemPrompt(tmpDir, "linux");

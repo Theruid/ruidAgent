@@ -35,7 +35,7 @@ This document tracks the current development status, completed milestones, and u
 - [x] **Context Window Pruning**: Automated token estimation and large tool result compaction to keep multi-turn conversations inside context bounds.
 
 ### Phase 2: Tooling & Coding Capabilities
-- [x] **Project Rules Auto-Loader**: Detects and injects `AGENT.md`, `CLAUDE.md`, `.agentrules`, `CODINGAGENT.md` into the system prompt.
+- [x] **Project Rules Auto-Loader**: Detects and injects `AGENT.md`, `CLAUDE.md`, `.agentrules`, `RUID.md` into the system prompt.
 - [x] **Native Git Tools**: `git_status`, `git_diff`, `git_log` with automatic output caps (100KB).
 - [x] **Task & Checklist Engine**: `task_create`, `task_update`, `task_list` tracking step-by-step progress.
 

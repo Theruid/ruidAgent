@@ -6,7 +6,7 @@ const INSTRUCTION_FILES = [
   "AGENT.md",
   "CLAUDE.md",
   ".agentrules",
-  "CODINGAGENT.md",
+  "RUID.md",
   ".github/copilot-instructions.md",
 ];
 

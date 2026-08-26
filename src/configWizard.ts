@@ -6,7 +6,7 @@ import { listModels as listAnthropicModels } from "./providers/anthropic.js";
 import { DEFAULT_CONFIG, type AppConfig } from "./config.js";
 import type { ProviderConfig } from "./providers/types.js";
 
-export const CONFIG_PATH = join(homedir(), ".codingagent", "config.json");
+export const CONFIG_PATH = join(homedir(), ".ruid", "config.json");
 
 export function loadConfigFile(): AppConfig {
   try {

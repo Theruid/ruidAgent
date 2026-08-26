@@ -60,7 +60,7 @@ Options:
       --list-models       Query the endpoint's /models and print available model IDs
   -h, --help              Show this help
 
-Providers are configured in ~/.ruid/config.json (or ~/.codingagent/config.json).`);
+Providers are configured in ~/.ruid/config.json.`);
 }
 
 export function createProvider(name: string, cfg: ProviderConfig): LLMProvider {
@@ -185,8 +185,8 @@ async function main(): Promise<void> {
   }
 
   // Fullscreen TUI needs a TTY; piped/redirected stdout gets a clear error.
-  // CODINGAGENT_FORCE_TUI=1 overrides (used by tests).
-  if (!process.stdout.isTTY && process.env.CODINGAGENT_FORCE_TUI !== "1") {
+  // RUID_FORCE_TUI=1 overrides (used by tests).
+  if (!process.stdout.isTTY && process.env.RUID_FORCE_TUI !== "1") {
     console.error("Interactive mode requires a terminal (TTY). Use -p <prompt> for non-interactive runs.");
     process.exit(1);
   }

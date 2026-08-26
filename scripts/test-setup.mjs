@@ -60,7 +60,7 @@ server.listen(0, () => {
     let pass = true;
     let saved;
     try {
-      saved = JSON.parse(readFileSync(join(fakeHome, ".codingagent", "config.json"), "utf8"));
+      saved = JSON.parse(readFileSync(join(fakeHome, ".ruid", "config.json"), "utf8"));
       console.log("\nsaved config:", JSON.stringify(saved, null, 2));
     } catch (e) {
       console.log("\nFAIL: config not saved:", e.message);
