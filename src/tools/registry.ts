@@ -6,6 +6,7 @@ import { gitStatusTool, gitDiffTool, gitLogTool } from "./git.js";
 import { TaskStore, taskCreateTool, taskUpdateTool, taskListTool } from "./tasks.js";
 import { SnapshotManager, rollbackTool } from "./snapshot.js";
 import { subagentTool, subagentParallelTool } from "./subagent.js";
+import { webSearchTool, webFetchTool } from "./web.js";
 import type { ToolDef, LLMProvider } from "../providers/types.js";
 import type { MCPClient } from "../mcp/client.js";
 
@@ -35,6 +36,8 @@ export async function buildRegistry(
     { ...listDirTool(ws), requiresPermission: false },
     { ...globTool(ws), requiresPermission: false },
     { ...grepTool(ws), requiresPermission: false },
+    { ...webSearchTool(signal), requiresPermission: false },
+    { ...webFetchTool(signal), requiresPermission: false },
     { ...gitStatusTool(ws), requiresPermission: false },
     { ...gitDiffTool(ws), requiresPermission: false },
     { ...gitLogTool(ws), requiresPermission: false },

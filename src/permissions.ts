@@ -33,6 +33,8 @@ const TIER_0_READ_ONLY_TOOLS = new Set([
   "rollback",
   "subagent_spawn",
   "subagent_parallel",
+  "web_search",
+  "web_fetch",
   "process_status",
   "process_logs",
 ]);

@@ -65,6 +65,29 @@ export function formatToolBadge(
       }
       break;
     }
+    case "web_search": {
+      const q = String(inp.query || "");
+      target = `"${q.length > 35 ? q.slice(0, 33) + "…" : q}"`;
+      if (resultText && !isError) {
+        const match = resultText.match(/Found (\d+) results/);
+        meta = match ? `${match[1]} results` : "completed";
+      }
+      break;
+    }
+    case "web_fetch": {
+      const rawUrl = String(inp.url || "");
+      try {
+        const parsed = new URL(rawUrl);
+        target = `${parsed.hostname}${parsed.pathname.length > 25 ? parsed.pathname.slice(0, 23) + "…" : parsed.pathname}`;
+      } catch {
+        target = rawUrl.length > 35 ? rawUrl.slice(0, 33) + "…" : rawUrl;
+      }
+      if (resultText && !isError) {
+        const kb = (resultText.length / 1024).toFixed(1);
+        meta = `${kb} KB`;
+      }
+      break;
+    }
     case "list_dir": {
       target = String(inp.path || ".");
       if (resultText && !isError) {

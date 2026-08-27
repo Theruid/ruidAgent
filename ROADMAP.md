@@ -27,7 +27,9 @@ This document tracks the current development status, completed milestones, and u
  ├───────────────────────────────────────────────────────────────────┼────────────┤
  │ Phase 8: Comprehensive Automated Test Suite (35+ Unit/Int Tests)  │  COMPLETE  │
  ├───────────────────────────────────────────────────────────────────┼────────────┤
- │ Phase 9: Web Search & External Docs Lookup                        │  UPCOMING  │
+ │ Phase 9: Web Search & External Docs Lookup                        │  COMPLETE  │
+ ├───────────────────────────────────────────────────────────────────┼────────────┤
+ │ Phase 10: Full-Text Session Search & Transcript Indexing          │  UPCOMING  │
  └───────────────────────────────────────────────────────────────────┴────────────┘
 ```
 
@@ -46,7 +48,8 @@ This document tracks the current development status, completed milestones, and u
 - [x] **Process Manager & Streaming Shell**: Live foreground output streaming alongside detached background daemons (`process_status`, `process_logs`, `process_kill`).
 - [x] **Two-Phase History Compaction**: Breakpoint-aligned micro-compaction (tool result truncation) and semantic LLM summarization.
 - [x] **Model Context Protocol (MCP) Client**: Full JSON-RPC 2.0 client supporting stdio and SSE transports with default untrusted security boundaries.
-- [x] **Comprehensive Automated Test Suite**: 10 test suites covering all core modules with 35+ passing tests.
+- [x] **Web Search & Live Documentation Fetcher**: Built-in zero-config `web_search` and HTML-to-Markdown `web_fetch` documentation scraper.
+- [x] **Comprehensive Automated Test Suite**: 11 test suites covering all core modules with 41+ passing tests.
 
 ### Developer Experience & TUI
 - [x] **Operating Modes**: `[CODE]` (safe default), `[PLAN]` (read-only architecture), `[AUTO]` (autonomous bypass) with `Tab` cycling.
@@ -60,18 +63,16 @@ This document tracks the current development status, completed milestones, and u
 
 ## 3. What's Left to Implement
 
-### Next Immediate Priority: Phase 9 — Web Search & External Docs Lookup
-- [ ] **Web Search Engine Tool**:
-  - Built-in safe web search tool (DuckDuckGo / Brave Search / Tavily) for querying current library documentation and APIs.
-- [ ] **External Documentation Fetcher**:
-  - HTML to Markdown web page scraper with readability filtering.
+### Next Immediate Priority: Phase 10 — Full-Text Session Search & Transcript Indexing
+- [ ] **Full-Text Session Search**:
+  - Search across past conversation histories and tool execution logs directly in `/resume` or `ruid --search <query>`.
 
 ---
 
 ### Future Enhancements
 - [ ] **Custom Provider Presets**:
   - Add quick setup presets in `/setup` for GitHub Models, OpenRouter, Together AI, and vLLM.
-- [ ] **Session Search & History Filter**:
-  - Full-text search across past session transcripts in `/resume`.
+- [ ] **Native Terminal Emulation & PTY Support**:
+  - Full xterm/pty integration for interactive REPL processes inside subshells.
 - [ ] **Native Terminal Emulation & PTY Support**:
   - Full xterm/pty integration for interactive REPL processes inside subshells.
