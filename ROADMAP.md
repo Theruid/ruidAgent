@@ -9,19 +9,25 @@ This document tracks the current development status, completed milestones, and u
 ```
                                 MILESTONE STATUS
  ┌───────────────────────────────────────────────────────────────────┬────────────┐
- │ Phase 1: Robustness, Context Management & Provider Resilience     │  COMPLETE  │
+ │ Phase 0: Tamper-Evident Audit Logging & Session Schema Versioning │  COMPLETE  │
  ├───────────────────────────────────────────────────────────────────┼────────────┤
- │ Phase 2: Native Tooling, Git & Task Management                    │  COMPLETE  │
+ │ Phase 1: Structured Context XML & Ephemeral Prompt Caching        │  COMPLETE  │
  ├───────────────────────────────────────────────────────────────────┼────────────┤
- │ Phase 3: Developer Experience, Modes, Rollback & Autocomplete     │  COMPLETE  │
+ │ Phase 2: Native Ripgrep Integration & Fallback Search Engine      │  COMPLETE  │
  ├───────────────────────────────────────────────────────────────────┼────────────┤
- │ Phase 4.1: Sub-Agent Swarm Delegation Engine (Parallel Execution) │  COMPLETE  │
+ │ Phase 3: Granular Safety Tiers, Path Boundaries & Permissions     │  COMPLETE  │
  ├───────────────────────────────────────────────────────────────────┼────────────┤
- │ Self-Update: In-place NPM Registry Auto-Updater & Semver Engine   │  COMPLETE  │
+ │ Phase 4: Sub-Agent Swarm, Schema Enforcement & Worktree Isolation │  COMPLETE  │
  ├───────────────────────────────────────────────────────────────────┼────────────┤
- │ Phase 4.2: Model Context Protocol (MCP) Client                    │  UPCOMING  │
+ │ Phase 5: Streaming Shell Runner & Background Process Manager      │  COMPLETE  │
  ├───────────────────────────────────────────────────────────────────┼────────────┤
- │ Phase 5: Web Search & External Docs Lookup                        │  UPCOMING  │
+ │ Phase 6: Two-Phase History Compaction & Semantic Summarization    │  COMPLETE  │
+ ├───────────────────────────────────────────────────────────────────┼────────────┤
+ │ Phase 7: Model Context Protocol (MCP) Client (Stdio & SSE)        │  COMPLETE  │
+ ├───────────────────────────────────────────────────────────────────┼────────────┤
+ │ Phase 8: Comprehensive Automated Test Suite (35+ Unit/Int Tests)  │  COMPLETE  │
+ ├───────────────────────────────────────────────────────────────────┼────────────┤
+ │ Phase 9: Web Search & External Docs Lookup                        │  UPCOMING  │
  └───────────────────────────────────────────────────────────────────┴────────────┘
 ```
 
@@ -29,61 +35,43 @@ This document tracks the current development status, completed milestones, and u
 
 ## 2. Completed Milestones
 
-### Phase 1: Robustness & Context Management
-- [x] **Zero-Dependency Glob Engine**: Node >= 20 compatible recursive file walker with regex matching (no Node 22 `globSync` lock-in).
-- [x] **Provider Resilience & Retries**: `fetchWithRetry` with exponential backoff and jitter for transient errors (`429`, `500`, `502`, `503`, `529`).
-- [x] **Context Window Pruning**: Automated token estimation and large tool result compaction to keep multi-turn conversations inside context bounds.
+### Modern Architecture & Core Subsystems (v0.3.x)
+- [x] **Tamper-Evident Audit Logging**: Append-only execution records in `.ruid/audit.jsonl` tracking tool sources, risk tiers, and execution latency.
+- [x] **Session Schema Versioning & Migrations**: Schema v2 with backwards-compatible legacy session upgrader.
+- [x] **Structured Context Layering**: Structured XML prompt hierarchy (`<system>`, `<environment>`, `<mode_guidelines>`, `<custom_instructions>`).
+- [x] **Ephemeral Prompt Caching**: Client-side breakpoints for Anthropic and automatic server-side prefix caching for OpenAI/compatible providers with live StatusBar telemetry.
+- [x] **Native Ripgrep Integration**: High-speed symbol and regex search powered by vendored `@vscode/ripgrep` binary with pure JS walker fallback.
+- [x] **Granular Safety Risk Tiers (0-4)**: Comprehensive permission manager classifying commands, path containment, and sensitive file protections (`.env`, private keys).
+- [x] **Sub-Agent Swarm & Orchestration**: Typed schema-enforced subagents, sequential `pipeline()` chains, concurrent `parallel()` sweeps, and Git worktree isolation.
+- [x] **Process Manager & Streaming Shell**: Live foreground output streaming alongside detached background daemons (`process_status`, `process_logs`, `process_kill`).
+- [x] **Two-Phase History Compaction**: Breakpoint-aligned micro-compaction (tool result truncation) and semantic LLM summarization.
+- [x] **Model Context Protocol (MCP) Client**: Full JSON-RPC 2.0 client supporting stdio and SSE transports with default untrusted security boundaries.
+- [x] **Comprehensive Automated Test Suite**: 10 test suites covering all core modules with 35+ passing tests.
 
-### Phase 2: Tooling & Coding Capabilities
-- [x] **Project Rules Auto-Loader**: Detects and injects `AGENT.md`, `CLAUDE.md`, `.agentrules`, `RUID.md` into the system prompt.
-- [x] **Native Git Tools**: `git_status`, `git_diff`, `git_log` with automatic output caps (100KB).
-- [x] **Task & Checklist Engine**: `task_create`, `task_update`, `task_list` tracking step-by-step progress.
-
-### Phase 3: Developer Experience & TUI Enhancements
-- [x] **Operating Modes**: `[CODE]` (safe default with permissions), `[PLAN]` (read-only architecture), `[AUTO]` (autonomous bypass).
-- [x] **Tab Key Mode Cycling**: Press `Tab` in the empty prompt to switch modes on the fly.
+### Developer Experience & TUI
+- [x] **Operating Modes**: `[CODE]` (safe default), `[PLAN]` (read-only architecture), `[AUTO]` (autonomous bypass) with `Tab` cycling.
 - [x] **Live TaskPanel UI**: Dynamic checklist rendering real-time states (`✓`, `⠋`, `○`).
 - [x] **Multi-line Input**: `Ctrl+Enter`, `Alt+Enter`, `Shift+Enter`, and trailing `\` for multi-line drafting.
 - [x] **`@` File Mention & Fuzzy Search**: Workspace file indexing popup that auto-attaches file contents into the prompt.
-- [x] **Turn Snapshots & `/rollback`**: File mutation checkpoints allowing instant rollback and prompt restoration without Git dependency.
-
-### Phase 4.1: Sub-Agent Swarm Engine
-- [x] **`subagent_spawn` Tool**: Orchestrator spawns isolated worker agents for research, coding, or adversarial reviews.
-- [x] **Context Isolation**: Child tool executions stay in the worker sandbox and never bloat parent tokens.
-- [x] **Parallel Execution**: Multiple sub-agents run concurrently via `Promise.all` with deadlock-safe sequential permission resolution.
-- [x] **Ctrl+C Abort Propagation**: `AbortSignal` forwarded through sub-agent loops for clean cancellation without UI hangs.
-- [x] **Reasoning Stream Separation**: `reasoning_content` isolated from the final answer stream for clean first-person responses.
-
-### Self-Update Engine
-- [x] **NPM Registry Checker**: Fast 2-second semver check on startup.
-- [x] **Interactive UpdatePrompt**: One-click in-place `npm install -g @theruid/ruid@latest` with restart notifications.
+- [x] **Turn Snapshots & `/rollback`**: File mutation checkpoints allowing instant rollback without Git dependency.
+- [x] **Self-Update Engine**: Fast semver check and one-click in-place `npm install -g @theruid/ruid@latest`.
 
 ---
 
 ## 3. What's Left to Implement
 
-### Next Immediate Priority: Phase 4.2 — Model Context Protocol (MCP) Client
-- [ ] **Config-Driven MCP Servers**:
-  - Support `~/.ruid/config.json` or `.ruid/mcp.json` defining external MCP server connections:
-    ```json
-    {
-      "mcpServers": {
-        "postgres": { "command": "npx", "args": ["-y", "@modelcontextprotocol/server-postgres", "postgresql://localhost/db"] },
-        "github": { "command": "npx", "args": ["-y", "@modelcontextprotocol/server-github"] }
-      }
-    }
-    ```
-- [ ] **Stdio JSON-RPC 2.0 Client**:
-  - Spawn server processes, perform handshake (`initialize`), list tools (`tools/list`), and dynamically mount them into `buildRegistry()`.
-- [ ] **MCP Tool Dispatch & Permissions**:
-  - Route tool calls through `tools/call`, honoring active `CODE`/`PLAN`/`AUTO` permission policies.
+### Next Immediate Priority: Phase 9 — Web Search & External Docs Lookup
+- [ ] **Web Search Engine Tool**:
+  - Built-in safe web search tool (DuckDuckGo / Brave Search / Tavily) for querying current library documentation and APIs.
+- [ ] **External Documentation Fetcher**:
+  - HTML to Markdown web page scraper with readability filtering.
 
 ---
 
-### Future Enhancements: Phase 5 & Beyond
-- [ ] **Web Search & Documentation Lookup**:
-  - Built-in safe web search tool (Brave Search / DuckDuckGo / Tavily) for querying current library documentation.
+### Future Enhancements
 - [ ] **Custom Provider Presets**:
   - Add quick setup presets in `/setup` for GitHub Models, OpenRouter, Together AI, and vLLM.
 - [ ] **Session Search & History Filter**:
   - Full-text search across past session transcripts in `/resume`.
+- [ ] **Native Terminal Emulation & PTY Support**:
+  - Full xterm/pty integration for interactive REPL processes inside subshells.
