@@ -71,6 +71,7 @@ Switch modes at any time by pressing **`Tab`** in the prompt or typing `/mode <m
 | `PageUp` / `PageDown` | Scroll chat transcript |
 | `Ctrl+C` | Interrupt running turn (press twice to exit) |
 | `/tasks` or `/plan` | View currently active plan and tasks |
+| `/mcp` | List connected Model Context Protocol (MCP) servers & tools |
 | `/rollback [turn]` | Revert file modifications back to pre-turn state |
 | `/new` | Start a new chat session |
 | `/resume` or `/sessions` | Open session picker to resume conversations |
@@ -81,6 +82,29 @@ Switch modes at any time by pressing **`Tab`** in the prompt or typing `/mode <m
 | `/clear` | Clear conversation history |
 | `/exit`, `/quit` | Save and exit |
 | `/help` | List commands |
+
+---
+
+## Model Context Protocol (MCP)
+
+Add external MCP tools directly in `~/.ruid/config.json`:
+
+```json
+{
+  "mcpServers": {
+    "memory": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-memory"]
+    },
+    "context7": {
+      "command": "npx",
+      "args": ["-y", "@upstash/context7-mcp"]
+    }
+  }
+}
+```
+
+Run `/mcp` in the terminal to inspect active servers and tools.
 
 ---
 
