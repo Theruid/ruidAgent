@@ -31,7 +31,9 @@ This document tracks the current development status, completed milestones, and u
  ├───────────────────────────────────────────────────────────────────┼────────────┤
  │ Phase 10: Full-Text Session Search & Live Transcript Filtering    │  COMPLETE  │
  ├───────────────────────────────────────────────────────────────────┼────────────┤
- │ Phase 11: Native Terminal Emulation & PTY Support                 │  UPCOMING  │
+ │ Phase 11: Interactive Terminal Process Management & Hang Control  │  COMPLETE  │
+ ├───────────────────────────────────────────────────────────────────┼────────────┤
+ │ Phase 12: AST-Aware Code Graph & Semantic Symbol Indexing         │  UPCOMING  │
  └───────────────────────────────────────────────────────────────────┴────────────┘
 ```
 
@@ -51,7 +53,8 @@ This document tracks the current development status, completed milestones, and u
 - [x] **Two-Phase History Compaction**: Breakpoint-aligned micro-compaction (tool result truncation) and semantic LLM summarization.
 - [x] **Model Context Protocol (MCP) Client**: Full JSON-RPC 2.0 client supporting stdio and SSE transports with default untrusted security boundaries.
 - [x] **Web Search & Live Documentation Fetcher**: Built-in zero-config `web_search` and HTML-to-Markdown `web_fetch` documentation scraper.
-- [x] **Comprehensive Automated Test Suite**: 11 test suites covering all core modules with 41+ passing tests.
+- [x] **Interactive Terminal Hang Detection & Process Guard**: Non-interactive headless environment injection (Node/npm, Git, Pip, Python, Apt), rolling buffer prompt hang detector, 400ms quiet confirmation, and cross-platform process tree termination.
+- [x] **Comprehensive Automated Test Suite**: 11 test suites covering all core modules with 45+ passing tests.
 
 ### Developer Experience & TUI
 - [x] **Operating Modes**: `[CODE]` (safe default), `[PLAN]` (read-only architecture), `[AUTO]` (autonomous bypass) with `Tab` cycling.
@@ -66,15 +69,12 @@ This document tracks the current development status, completed milestones, and u
 
 ## 3. What's Left to Implement
 
-### Next Immediate Priority: Phase 11 — Native Terminal Emulation & PTY Support
-- [ ] **Native Terminal Emulation & PTY Support**:
-  - Full xterm/pty integration for interactive CLI processes (`npm init`, `vue create`, etc.) inside subshells.
+### Next Immediate Priority: Phase 12 — AST-Aware Code Graph & Semantic Symbol Indexing
+- [ ] **AST-Aware Code Graph**:
+  - Tree-sitter powered semantic code search, definition jumps, and cross-file reference mapping.
 
 ---
 
 ### Future Enhancements
 - [ ] **Custom Provider Presets**:
   - Add quick setup presets in `/setup` for GitHub Models, OpenRouter, Together AI, and vLLM.
-- [ ] **AST-Aware Code Graph**:
-  - Semantic code search and dependency graph navigation.
-  - Full xterm/pty integration for interactive REPL processes inside subshells.

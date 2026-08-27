@@ -4,9 +4,74 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Workspace } from "./fs.js";
 import { ensureConfigDir } from "../config.js";
+import { logAudit } from "../audit/log.js";
 
 const DEFAULT_TIMEOUT_MS = 120_000;
 const MAX_OUTPUT_BYTES = 200 * 1024;
+const PROMPT_QUIET_WINDOW_MS = 400;
+const ROLLING_BUFFER_MAX = 300;
+
+export const NON_INTERACTIVE_ENV = {
+  CI: "1",
+  DEBIAN_FRONTEND: "noninteractive",
+  npm_config_yes: "true",
+  GIT_TERMINAL_PROMPT: "0",
+  PIP_NO_INPUT: "1",
+  PYTHONUNBUFFERED: "1",
+  FORCE_COLOR: "0",
+  NO_COLOR: "1",
+};
+
+export const INTERACTIVE_PROMPT_PATTERNS = [
+  /\?\s+Select\b/i,
+  /\?\s+Choose\b/i,
+  /\[y\/n\]/i,
+  /\[yes\/no\]/i,
+  /\(y\/n\)/i,
+  /\[Y\/n\]/i,
+  /\[y\/N\]/i,
+  /Password\s*:/i,
+  /Enter passphrase/i,
+  /Press any key to continue/i,
+  /Press enter to continue/i,
+  /Enter\s+[^:\n]+:\s*$/i,
+  /Overwrite.*\?/i,
+  /Do you want to continue\?/i,
+  /Package name:\s*\(/i,
+];
+
+export function matchesInteractivePrompt(buffer: string): { matched: boolean; promptSnippet?: string } {
+  for (const pattern of INTERACTIVE_PROMPT_PATTERNS) {
+    const match = buffer.match(pattern);
+    if (match) {
+      return { matched: true, promptSnippet: match[0].trim() };
+    }
+  }
+  return { matched: false };
+}
+
+function killProcessTree(child: ChildProcess): void {
+  try {
+    if (process.platform === "win32") {
+      if (child.pid) {
+        spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], { stdio: "ignore" });
+      }
+      child.kill("SIGKILL");
+    } else {
+      if (child.pid) {
+        try {
+          process.kill(-child.pid, "SIGKILL");
+        } catch {
+          child.kill("SIGKILL");
+        }
+      } else {
+        child.kill("SIGKILL");
+      }
+    }
+  } catch {
+    // Ignore error if process already exited
+  }
+}
 
 export interface ProcessInfo {
   id: string;
@@ -34,7 +99,7 @@ export class ProcessManager {
     const child = spawn(isWindows ? "cmd.exe" : "/bin/sh", isWindows ? ["/c", command] : ["-c", command], {
       cwd,
       detached: true,
-      env: { ...process.env, FORCE_COLOR: "0", NO_COLOR: "1" },
+      env: { ...process.env, ...NON_INTERACTIVE_ENV },
     });
 
     const info: ProcessInfo = {
@@ -96,7 +161,7 @@ export class ProcessManager {
     const entry = this.processes.get(id);
     if (!entry) return false;
     try {
-      entry.child.kill("SIGKILL");
+      killProcessTree(entry.child);
       entry.info.status = "killed";
       return true;
     } catch {
@@ -139,14 +204,38 @@ export function bashTool(
       const isWindows = process.platform === "win32";
 
       return new Promise((resolve) => {
+        let isResolved = false;
+        let hardTimeoutTimer: NodeJS.Timeout | null = null;
+        let quietTimer: NodeJS.Timeout | null = null;
+        let rollingBuffer = "";
+
         const child = spawn(isWindows ? "cmd.exe" : "/bin/sh", isWindows ? ["/c", args.command] : ["-c", args.command], {
           cwd: ws.root,
-          env: { ...process.env, FORCE_COLOR: "0", NO_COLOR: "1" },
+          detached: !isWindows,
+          env: { ...process.env, ...NON_INTERACTIVE_ENV },
         });
 
         let stdout = "";
         let stderr = "";
         let truncated = false;
+
+        const cleanupTimers = () => {
+          if (hardTimeoutTimer) {
+            clearTimeout(hardTimeoutTimer);
+            hardTimeoutTimer = null;
+          }
+          if (quietTimer) {
+            clearTimeout(quietTimer);
+            quietTimer = null;
+          }
+        };
+
+        const finish = (result: string) => {
+          if (isResolved) return;
+          isResolved = true;
+          cleanupTimers();
+          resolve(result);
+        };
 
         const cap = (chunk: string, target: string): string => {
           if (stdout.length + stderr.length >= MAX_OUTPUT_BYTES) {
@@ -156,35 +245,82 @@ export function bashTool(
           return target + chunk;
         };
 
-        child.stdout.on("data", (d: Buffer) => {
+        const handleChunk = (chunkText: string, streamType: "stdout" | "stderr") => {
+          if (isResolved) return;
+
+          // Maintain sliding rolling buffer across chunk boundaries
+          rollingBuffer = (rollingBuffer + chunkText).slice(-ROLLING_BUFFER_MAX);
+
+          // If output continues, reset quiet confirmation timer
+          if (quietTimer) {
+            clearTimeout(quietTimer);
+            quietTimer = null;
+          }
+
+          // Check if buffer contains an interactive prompt signature
+          const { matched, promptSnippet } = matchesInteractivePrompt(rollingBuffer);
+          if (matched) {
+            quietTimer = setTimeout(() => {
+              if (isResolved) return;
+              killProcessTree(child);
+              logAudit({
+                ts: Date.now(),
+                source: "direct",
+                tool: "bash",
+                args: { command: args.command, detectedPrompt: promptSnippet },
+                tier: 3,
+                decision: "denied",
+                error: `Interactive prompt hang: "${promptSnippet}"`,
+              });
+
+              finish(
+                `Execution blocked: Command paused waiting for interactive user input ("${promptSnippet}").\n` +
+                  `Process was terminated after ${PROMPT_QUIET_WINDOW_MS}ms to prevent terminal freeze.\n` +
+                  `Fix: Re-run the command with automated flags (e.g. -y, --yes, --non-interactive, or pass required inputs directly).`
+              );
+            }, PROMPT_QUIET_WINDOW_MS);
+          }
+
+          onChunk?.(chunkText, streamType);
+        };
+
+        child.stdout?.on("data", (d: Buffer) => {
           const text = d.toString();
           stdout = cap(text, stdout);
-          onChunk?.(text, "stdout");
-        });
-        child.stderr.on("data", (d: Buffer) => {
-          const text = d.toString();
-          stderr = cap(text, stderr);
-          onChunk?.(text, "stderr");
+          handleChunk(text, "stdout");
         });
 
-        const timer = setTimeout(() => {
-          child.kill("SIGKILL");
-          resolve(`Command timed out after ${timeout}ms.\nSTDOUT:\n${stdout}\nSTDERR:\n${stderr}`);
+        child.stderr?.on("data", (d: Buffer) => {
+          const text = d.toString();
+          stderr = cap(text, stderr);
+          handleChunk(text, "stderr");
+        });
+
+        hardTimeoutTimer = setTimeout(() => {
+          killProcessTree(child);
+          logAudit({
+            ts: Date.now(),
+            source: "direct",
+            tool: "bash",
+            args: { command: args.command },
+            tier: 3,
+            decision: "denied",
+            error: `Hard timeout exceeded after ${timeout}ms`,
+          });
+          finish(`Command timed out after ${timeout}ms.\nSTDOUT:\n${stdout}\nSTDERR:\n${stderr}`);
         }, timeout);
 
         child.on("error", (err) => {
-          clearTimeout(timer);
-          resolve(`Failed to spawn: ${err.message}`);
+          finish(`Failed to spawn: ${err.message}`);
         });
 
         child.on("close", (code) => {
-          clearTimeout(timer);
           const suffix = truncated ? "\n(output truncated)" : "";
-          resolve(
+          finish(
             `Exit code: ${code ?? "null"}\n` +
               (stdout ? `STDOUT:\n${stdout}\n` : "") +
               (stderr ? `STDERR:\n${stderr}\n` : "") +
-              suffix,
+              suffix
           );
         });
       });
