@@ -94,6 +94,44 @@ export function loadSession(id: string): StoredSession | null {
   }
 }
 
+export function searchSessions(query: string): Array<StoredSession & { snippet?: string }> {
+  const q = query.toLowerCase().trim();
+  if (!q) return listSessions();
+
+  const sessions = listSessions();
+  const matched: Array<StoredSession & { snippet?: string }> = [];
+
+  for (const sess of sessions) {
+    if (sess.title.toLowerCase().includes(q) || sess.id.toLowerCase().includes(q)) {
+      matched.push(sess);
+      continue;
+    }
+
+    let foundSnippet = "";
+    for (const m of sess.messages) {
+      for (const c of m.content) {
+        if (c.type === "text" && c.text.toLowerCase().includes(q)) {
+          const idx = c.text.toLowerCase().indexOf(q);
+          const start = Math.max(0, idx - 25);
+          const end = Math.min(c.text.length, idx + q.length + 25);
+          foundSnippet = (start > 0 ? "…" : "") + c.text.slice(start, end).replace(/\s+/g, " ").trim() + (end < c.text.length ? "…" : "");
+          break;
+        } else if (c.type === "tool_call" && c.name.toLowerCase().includes(q)) {
+          foundSnippet = `Tool: ${c.name}`;
+          break;
+        }
+      }
+      if (foundSnippet) break;
+    }
+
+    if (foundSnippet) {
+      matched.push({ ...sess, snippet: foundSnippet });
+    }
+  }
+
+  return matched;
+}
+
 export function newSessionId(): string {
   const d = new Date();
   const pad = (n: number) => String(n).padStart(2, "0");

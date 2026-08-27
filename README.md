@@ -18,35 +18,16 @@ On first launch, run `/setup` to connect your API key or local model endpoint.
 
 ## Usage
 
-### Interactive TUI Mode
+Launch the interactive coding environment:
 
 ```bash
 ruid
 ```
 
-### One-Shot Mode (Non-interactive)
+Configure providers, API keys, or endpoints at any time using the setup wizard:
 
 ```bash
-ruid -p "explain what this repository does"
-ruid -p "fix the failing test in src/utils.ts" --provider deepseek --model deepseek-chat
-ruid -p "list open issues" --provider ollama --model llama3.2
-```
-
-### CLI Options
-
-```
-ruid                       Interactive terminal UI
-ruid -p "<prompt>"         One-shot command execution
-ruid setup                 Interactive provider setup wizard
-
-Options:
-  -p, --prompt <text>      Run a single prompt and exit
-      --provider <name>    Provider name from config
-      --model <id>         Model ID override
-      --base-url <url>     Custom OpenAI-compatible endpoint URL
-      --api-key <key>      API key for custom endpoint
-      --list-models        Query endpoint /models and list model IDs
-  -h, --help               Show help
+ruid setup
 ```
 
 ---

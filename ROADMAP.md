@@ -29,7 +29,9 @@ This document tracks the current development status, completed milestones, and u
  ├───────────────────────────────────────────────────────────────────┼────────────┤
  │ Phase 9: Web Search & External Docs Lookup                        │  COMPLETE  │
  ├───────────────────────────────────────────────────────────────────┼────────────┤
- │ Phase 10: Full-Text Session Search & Transcript Indexing          │  UPCOMING  │
+ │ Phase 10: Full-Text Session Search & Live Transcript Filtering    │  COMPLETE  │
+ ├───────────────────────────────────────────────────────────────────┼────────────┤
+ │ Phase 11: Native Terminal Emulation & PTY Support                 │  UPCOMING  │
  └───────────────────────────────────────────────────────────────────┴────────────┘
 ```
 
@@ -57,22 +59,22 @@ This document tracks the current development status, completed milestones, and u
 - [x] **Multi-line Input**: `Ctrl+Enter`, `Alt+Enter`, `Shift+Enter`, and trailing `\` for multi-line drafting.
 - [x] **`@` File Mention & Fuzzy Search**: Workspace file indexing popup that auto-attaches file contents into the prompt.
 - [x] **Turn Snapshots & `/rollback`**: File mutation checkpoints allowing instant rollback without Git dependency.
+- [x] **Full-Text Session Search & Transcript Indexing**: Live interactive substring & entity search across all previous conversations in `/resume`.
 - [x] **Self-Update Engine**: Fast semver check and one-click in-place `npm install -g @theruid/ruid@latest`.
 
 ---
 
 ## 3. What's Left to Implement
 
-### Next Immediate Priority: Phase 10 — Full-Text Session Search & Transcript Indexing
-- [ ] **Full-Text Session Search**:
-  - Search across past conversation histories and tool execution logs directly in `/resume` or `ruid --search <query>`.
+### Next Immediate Priority: Phase 11 — Native Terminal Emulation & PTY Support
+- [ ] **Native Terminal Emulation & PTY Support**:
+  - Full xterm/pty integration for interactive CLI processes (`npm init`, `vue create`, etc.) inside subshells.
 
 ---
 
 ### Future Enhancements
 - [ ] **Custom Provider Presets**:
   - Add quick setup presets in `/setup` for GitHub Models, OpenRouter, Together AI, and vLLM.
-- [ ] **Native Terminal Emulation & PTY Support**:
-  - Full xterm/pty integration for interactive REPL processes inside subshells.
-- [ ] **Native Terminal Emulation & PTY Support**:
+- [ ] **AST-Aware Code Graph**:
+  - Semantic code search and dependency graph navigation.
   - Full xterm/pty integration for interactive REPL processes inside subshells.

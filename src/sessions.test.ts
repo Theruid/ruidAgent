@@ -5,6 +5,9 @@ import {
   migrateSession,
   titleFromMessages,
   newSessionId,
+  saveSession,
+  deleteSession,
+  searchSessions,
   type StoredSession,
 } from "./sessions.js";
 import type { LLMMessage } from "./providers/types.js";
@@ -95,5 +98,34 @@ describe("Session Schema & Migrations", () => {
     const longTitle = titleFromMessages(longMsgs);
     assert.strictEqual(longTitle.length, 61);
     assert.strictEqual(longTitle.endsWith("…"), true);
+  });
+
+  it("searches stored sessions by title and message content", () => {
+    const testId = `test-search-${Date.now()}`;
+    saveSession({
+      id: testId,
+      title: "Authentication refactor ticket",
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      providerName: "anthropic",
+      model: "claude-3-5-sonnet",
+      messages: [
+        {
+          role: "user",
+          content: [{ type: "text", text: "Please inspect jsonwebtoken verifying logic" }],
+        },
+      ],
+    });
+
+    const searchByTitle = searchSessions("Authentication");
+    assert.strictEqual(searchByTitle.some((s) => s.id === testId), true);
+
+    const searchByContent = searchSessions("jsonwebtoken");
+    assert.strictEqual(searchByContent.some((s) => s.id === testId), true);
+
+    const noMatch = searchSessions("non_existent_random_phrase_xyz");
+    assert.strictEqual(noMatch.some((s) => s.id === testId), false);
+
+    deleteSession(testId);
   });
 });
