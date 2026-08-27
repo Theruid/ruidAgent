@@ -169,15 +169,11 @@ async function executeRipgrep(
       const formatted = lines
         .slice(offset, offset + limit)
         .map((line) => {
-          // Normalize relative path in line output
-          const firstColon = line.indexOf(":");
-          if (firstColon === -1) return line;
-          const secondColon = line.indexOf(":", firstColon + 1);
-          if (secondColon === -1) return line;
-
-          const fileAbs = line.slice(0, firstColon);
-          const lineNum = line.slice(firstColon + 1, secondColon);
-          const text = line.slice(secondColon + 1);
+          // Parse ripgrep output line: <file>:<line>:<text>
+          // Note that Windows drive letters have a colon after the drive (e.g. C:\path:12:text)
+          const match = line.match(/^(?:([a-zA-Z]:[\\/][^:]+|[^:]+)):(\d+):(.*)$/);
+          if (!match) return line;
+          const [, fileAbs, lineNum, text] = match;
           const rel = ws.relative(fileAbs);
           return `${rel}:${lineNum}: ${text.trim()}`;
         });

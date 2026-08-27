@@ -168,7 +168,7 @@ function translateMessage(m: LLMMessage): Record<string, unknown> {
 }
 
 async function* parseStream(body: ReadableStream<Uint8Array>): AsyncIterable<StreamEvent> {
-  let usage: { prompt_tokens?: number; completion_tokens?: number } | undefined;
+  let usage: any | undefined;
   let finishReason: string | null = null;
 
   // Accumulate streamed argument fragments per call index; emit each call as
@@ -237,11 +237,21 @@ async function* parseStream(body: ReadableStream<Uint8Array>): AsyncIterable<Str
   }
 
   const hadToolCalls = ordered.length > 0;
+  const cachedTokens =
+    usage?.prompt_tokens_details?.cached_tokens ??
+    usage?.prompt_cache_hit_tokens ??
+    usage?.cache_read_input_tokens ??
+    0;
+
   yield {
     type: "message_delta",
     stopReason: hadToolCalls ? "tool_use" : finishReason === "stop" ? "end_turn" : finishReason,
     usage: usage
-      ? { inputTokens: usage.prompt_tokens ?? 0, outputTokens: usage.completion_tokens ?? 0 }
+      ? {
+          inputTokens: usage.prompt_tokens ?? 0,
+          outputTokens: usage.completion_tokens ?? 0,
+          cacheReadInputTokens: cachedTokens,
+        }
       : undefined,
   };
 }

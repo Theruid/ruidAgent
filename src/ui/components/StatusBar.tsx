@@ -36,6 +36,7 @@ export function StatusBar({
 
   const hasUsage = usage && (usage.inputTokens > 0 || usage.outputTokens > 0);
   const inStr = usage ? formatTokenCount(usage.inputTokens) : "0";
+  const cachedStr = usage?.cacheReadInputTokens ? ` (${formatTokenCount(usage.cacheReadInputTokens)} cached)` : "";
   const outStr = usage ? formatTokenCount(usage.outputTokens) : "0";
   const costStr = usage ? formatCost(usage.totalCost) : "$0.00";
   const latencyStr = lastTurnLatencyMs ? formatLatency(lastTurnLatencyMs) : null;
@@ -64,7 +65,7 @@ export function StatusBar({
       {hasUsage && (
         <Box>
           <Text dimColor>
-            {inStr} in · {outStr} out · {costStr}
+            {inStr} in{cachedStr} · {outStr} out · {costStr}
             {latencyStr ? ` · ${latencyStr}` : ""}
           </Text>
         </Box>
