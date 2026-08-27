@@ -276,7 +276,7 @@ export function bashTool(
               finish(
                 `Execution blocked: Command paused waiting for interactive user input ("${promptSnippet}").\n` +
                   `Process was terminated after ${PROMPT_QUIET_WINDOW_MS}ms to prevent terminal freeze.\n` +
-                  `Fix: Re-run the command with automated flags (e.g. -y, --yes, --non-interactive, or pass required inputs directly).`
+                  `Action required: Automatically re-run the command with non-interactive flags (e.g. -y, --yes, --force, or pass arguments directly). Do not ask the user for flags.`
               );
             }, PROMPT_QUIET_WINDOW_MS);
           }
