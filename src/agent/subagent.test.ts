@@ -2,6 +2,8 @@ import { describe, it } from "node:test";
 import assert from "node:assert";
 import { buildSubagentSystemPrompt } from "./subagent.js";
 import { pipeline, parallel } from "./orchestration.js";
+import { subagentParallelTool } from "../tools/subagent.js";
+import { Workspace } from "../tools/fs.js";
 import type { LLMProvider } from "../providers/types.js";
 
 describe("Subagents & Orchestration Primitives", () => {
@@ -85,5 +87,34 @@ describe("Subagents & Orchestration Primitives", () => {
     assert.strictEqual(results.length, 2);
     assert.strictEqual(results[0].result, "result-for:task-A");
     assert.strictEqual(results[1].result, "result-for:task-B");
+  });
+
+  it("executes subagent_parallel tool and formats output", async () => {
+    const mockProvider: LLMProvider = {
+      name: "mock-llm",
+      config: { type: "openai" },
+      async *complete(req) {
+        const lastUser = req.messages.find((m) => m.role === "user");
+        const userText =
+          lastUser?.content.find((c): c is Extract<typeof c, { type: "text" }> => c.type === "text")
+            ?.text ?? "";
+        yield { type: "text_delta", text: `audit(${userText})` };
+        yield { type: "message_delta", stopReason: "stop" };
+      },
+    };
+
+    const ws = new Workspace(process.cwd());
+    const tool = subagentParallelTool(ws, mockProvider, "mock-model");
+    const result = await tool.execute({
+      tasks: [
+        { role: "explore", prompt: "fileA.ts" },
+        { role: "explore", prompt: "fileB.ts" },
+      ],
+    });
+
+    assert.match(result, /Task #1 \(EXPLORE\) Result/);
+    assert.match(result, /audit\(fileA\.ts\)/);
+    assert.match(result, /Task #2 \(EXPLORE\) Result/);
+    assert.match(result, /audit\(fileB\.ts\)/);
   });
 });

@@ -12,9 +12,20 @@ export class StdioTransport implements MCPTransport {
   private buffer = "";
 
   constructor(command: string, args: string[] = [], env: Record<string, string> = {}) {
-    this.child = spawn(command, args, {
+    const isWin = process.platform === "win32";
+    let cmd = command;
+    if (isWin && (cmd === "npx" || cmd === "npm")) {
+      cmd = `${cmd}.cmd`;
+    }
+
+    this.child = spawn(cmd, args, {
       env: { ...process.env, ...env },
       stdio: ["pipe", "pipe", "inherit"],
+      shell: isWin,
+    });
+
+    this.child.on("error", () => {
+      // Prevent unhandled error crashes if binary is missing or fails to launch
     });
 
     this.child.stdout?.on("data", (data: Buffer) => {

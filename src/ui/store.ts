@@ -58,6 +58,7 @@ export interface UIState {
   lastTurnDurationMs: number;
   tasks: AgentTask[];
   updateInfo: UpdateInfo | null;
+  mcpServerCount: number;
 }
 
 // Framework-free store so non-React code (agent loop callbacks) can push
@@ -114,6 +115,7 @@ export class AgentUIStore {
       lastTurnDurationMs: 0,
       tasks: [],
       updateInfo: null,
+      mcpServerCount: 0,
     };
   }
 
@@ -174,6 +176,10 @@ export class AgentUIStore {
 
   setTasks(tasks: AgentTask[]): void {
     this.set({ tasks }, true);
+  }
+
+  setMcpServerCount(count: number): void {
+    this.set({ mcpServerCount: count }, true);
   }
 
   setScrollOffset(offset: number): void {

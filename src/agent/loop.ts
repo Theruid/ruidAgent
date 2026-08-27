@@ -14,6 +14,7 @@ import { TaskStore, type AgentTask } from "../tools/tasks.js";
 import { SnapshotManager } from "../tools/snapshot.js";
 import { ProcessManager } from "../tools/bash.js";
 import { logAudit } from "../audit/log.js";
+import type { MCPClient } from "../mcp/client.js";
 
 export interface LoopOptions {
   provider: LLMProvider;
@@ -30,6 +31,7 @@ export interface LoopOptions {
   taskStore?: TaskStore;
   snapshots?: SnapshotManager;
   processManager?: ProcessManager;
+  mcpClients?: MCPClient[];
 }
 
 export type LoopEvent =
@@ -86,14 +88,16 @@ export async function runAgentLoop(options: LoopOptions): Promise<LLMMessage[]> 
   const processManager = options.processManager ?? new ProcessManager();
   snapshots.beginTurn();
 
-  const registry = buildRegistry(
+  const registry = await buildRegistry(
     ws,
     taskStore,
     snapshots,
     options.provider,
     options.model,
     options.signal,
-    processManager
+    processManager,
+    undefined,
+    options.mcpClients ?? []
   );
 
   const permissions =

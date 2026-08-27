@@ -22,6 +22,7 @@ import path from "node:path";
 import { TaskStore } from "../tools/tasks.js";
 import { SnapshotManager } from "../tools/snapshot.js";
 import { checkForUpdate } from "../updater.js";
+import { MCPClient } from "../mcp/client.js";
 
 /**
  * Scans a user prompt for `@filepath` mentions and attaches file contents if found.
@@ -93,6 +94,23 @@ export function startTui(options: TuiOptions): void {
   const taskStore = new TaskStore();
   const snapshots = new SnapshotManager();
 
+  // Instantiate and connect configured MCP servers
+  const mcpClients: MCPClient[] = [];
+  const appConfig = loadConfig();
+  if (appConfig.mcpServers) {
+    for (const [serverName, serverCfg] of Object.entries(appConfig.mcpServers)) {
+      if (serverCfg.disabled) continue;
+      const client = new MCPClient(serverName, serverCfg);
+      mcpClients.push(client);
+      client.connect().then(() => {
+        store.setMcpServerCount(mcpClients.length);
+      }).catch(() => {
+        // Safe fallback if an external MCP server fails to connect
+      });
+    }
+    store.setMcpServerCount(mcpClients.length);
+  }
+
   // Current conversation state
   let sessionId = newSessionId();
   let history: LLMMessage[] = [];
@@ -130,6 +148,9 @@ export function startTui(options: TuiOptions): void {
 
   function exit(): void {
     flushAutosave();
+    for (const client of mcpClients) {
+      client.close().catch(() => {});
+    }
     instance.unmount();
     process.stdout.write("\x1b[?1049l");
     process.exit(0);
@@ -222,6 +243,7 @@ export function startTui(options: TuiOptions): void {
         permissions: permissions.manager,
         taskStore,
         snapshots,
+        mcpClients,
         onEvent: (e) => store.applyLoopEvent(e),
       });
       dirty = true;
@@ -360,6 +382,24 @@ export function startTui(options: TuiOptions): void {
         break;
       }
 
+      case "mcp": {
+        if (mcpClients.length === 0) {
+          store.setNotice("No MCP servers configured in ~/.ruid/config.json");
+          break;
+        }
+        const summaries: string[] = [];
+        for (const client of mcpClients) {
+          try {
+            const tools = await client.listTools();
+            summaries.push(`• ${client.serverName}: ${tools.length} tools (${tools.map((t) => t.name).slice(0, 3).join(", ")}${tools.length > 3 ? "..." : ""})`);
+          } catch {
+            summaries.push(`• ${client.serverName}: disconnected/error`);
+          }
+        }
+        store.setNotice(`MCP Servers:\n${summaries.join("\n")}`);
+        break;
+      }
+
       case "tasks":
       case "plan": {
         const tasks = store.getState().tasks;
@@ -413,7 +453,7 @@ export function startTui(options: TuiOptions): void {
       }
 
       case "help":
-        store.setNotice("/new /resume /sessions /setup /providers /connect <name> /model <id> /mode <code|plan|auto> /rollback /tasks /clear /exit");
+        store.setNotice("/new /resume /sessions /setup /mcp /providers /connect <name> /model <id> /mode <code|plan|auto> /rollback /tasks /clear /exit");
         break;
 
       default:

@@ -5,7 +5,7 @@ import { bashTool, ProcessManager, processStatusTool, processLogsTool, processKi
 import { gitStatusTool, gitDiffTool, gitLogTool } from "./git.js";
 import { TaskStore, taskCreateTool, taskUpdateTool, taskListTool } from "./tasks.js";
 import { SnapshotManager, rollbackTool } from "./snapshot.js";
-import { subagentTool } from "./subagent.js";
+import { subagentTool, subagentParallelTool } from "./subagent.js";
 import type { ToolDef, LLMProvider } from "../providers/types.js";
 import type { MCPClient } from "../mcp/client.js";
 
@@ -19,7 +19,7 @@ export interface AgentTool {
   requiresPermission: boolean;
 }
 
-export function buildRegistry(
+export async function buildRegistry(
   ws: Workspace,
   taskStore = new TaskStore(),
   snapshots = new SnapshotManager(),
@@ -29,7 +29,7 @@ export function buildRegistry(
   processManager = new ProcessManager(),
   onBashChunk?: (chunk: string, stream: "stdout" | "stderr") => void,
   mcpClients: MCPClient[] = []
-): Map<string, AgentTool> {
+): Promise<Map<string, AgentTool>> {
   const tools: AgentTool[] = [
     { ...readFileTool(ws), requiresPermission: false },
     { ...listDirTool(ws), requiresPermission: false },
@@ -45,7 +45,12 @@ export function buildRegistry(
     { ...processLogsTool(processManager), requiresPermission: false },
     { ...processKillTool(processManager), requiresPermission: true },
     { ...rollbackTool(ws, snapshots), requiresPermission: false },
-    ...(provider && model ? [{ ...subagentTool(ws, provider, model, signal), requiresPermission: false }] : []),
+    ...(provider && model
+      ? [
+          { ...subagentTool(ws, provider, model, signal), requiresPermission: false },
+          { ...subagentParallelTool(ws, provider, model, signal), requiresPermission: false },
+        ]
+      : []),
     { ...writeFileTool(ws, snapshots), requiresPermission: true },
     { ...editFileTool(ws, snapshots), requiresPermission: true },
     { ...bashTool(ws, processManager, onBashChunk), requiresPermission: true },
@@ -53,9 +58,10 @@ export function buildRegistry(
 
   const registry = new Map(tools.map((t) => [t.name, t]));
 
-  // Dynamically attach MCP tools
+  // Dynamically await and attach MCP tools from all connected servers
   for (const client of mcpClients) {
-    client.listTools().then((mcpTools) => {
+    try {
+      const mcpTools = await client.listTools();
       for (const mcpTool of mcpTools) {
         const namespacedName = `mcp__${client.serverName}__${mcpTool.name}`;
         registry.set(namespacedName, {
@@ -71,7 +77,9 @@ export function buildRegistry(
           requiresPermission: !client.config.trusted, // Untrusted by default
         });
       }
-    }).catch(() => {});
+    } catch {
+      // Ignore individual server discovery failure
+    }
   }
 
   return registry;

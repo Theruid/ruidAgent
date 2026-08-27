@@ -15,6 +15,7 @@ export const COMMANDS: CommandItem[] = [
   { name: "/resume", description: "Pick and resume a saved session" },
   { name: "/sessions", description: "List all saved sessions" },
   { name: "/setup", description: "Interactive LLM provider setup wizard" },
+  { name: "/mcp", description: "List connected Model Context Protocol (MCP) servers & tools" },
   { name: "/providers", description: "Browse, search & switch configured providers" },
   { name: "/connect", args: "[name]", description: "Switch provider (interactive picker if no name)" },
   { name: "/model", args: "[id]", description: "Browse, search & switch models interactively" },

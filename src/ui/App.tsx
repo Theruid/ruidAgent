@@ -244,6 +244,7 @@ export function App({
         running={state.phase === "running"}
         mode={state.mode}
         taskCount={state.tasks.length}
+        mcpCount={state.mcpServerCount}
         usage={state.sessionUsage}
         lastTurnLatencyMs={state.lastTurnDurationMs}
       />

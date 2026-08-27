@@ -34,12 +34,15 @@ export class MCPClient {
       }
     });
 
-    // Initialize handshake with 5s timeout
+    // Initialize handshake with 10s timeout
     await this.request("initialize", {
       protocolVersion: "2024-11-05",
-      clientInfo: { name: "ruid", version: "0.2.6" },
+      clientInfo: { name: "ruid", version: "0.3.1" },
       capabilities: {},
     });
+
+    // Send initialized notification per JSON-RPC MCP spec
+    await this.transport.send({ jsonrpc: "2.0", method: "notifications/initialized" }).catch(() => {});
   }
 
   private request(method: string, params: Record<string, unknown> = {}): Promise<any> {

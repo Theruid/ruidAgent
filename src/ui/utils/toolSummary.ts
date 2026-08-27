@@ -132,8 +132,22 @@ export function formatToolBadge(
       }
       break;
     }
+    case "subagent_parallel": {
+      const taskList = Array.isArray(inp.tasks) ? inp.tasks : [];
+      const roles = taskList.map((t: any) => String(t?.role || "worker").toUpperCase());
+      target = `${taskList.length} workers (${roles.join(", ")})`;
+      if (resultText && !isError) {
+        meta = "completed";
+      }
+      break;
+    }
     default: {
-      target = Object.values(inp)[0] ? String(Object.values(inp)[0]) : "";
+      const firstVal = Object.values(inp)[0];
+      if (typeof firstVal === "string" || typeof firstVal === "number" || typeof firstVal === "boolean") {
+        target = String(firstVal);
+      } else {
+        target = "";
+      }
       if (target.length > 40) target = target.slice(0, 38) + "…";
     }
   }

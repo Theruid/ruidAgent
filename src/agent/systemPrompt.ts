@@ -4,11 +4,9 @@ import type { AgentMode } from "../permissions.js";
 import type { SystemPromptBlock } from "../providers/types.js";
 
 const INSTRUCTION_FILES = [
-  "AGENT.md",
-  "CLAUDE.md",
-  ".agentrules",
   "RUID.md",
-  ".github/copilot-instructions.md",
+  "AGENT.md",
+  ".agentrules",
 ];
 
 export function loadProjectInstructions(workspaceRoot: string): string | null {
@@ -49,7 +47,8 @@ CURRENT MODE: PLAN MODE
   } else if (mode === "auto") {
     modeGuideline = `<mode_guidelines>
 CURRENT MODE: AUTONOMOUS MODE
-- You are in autonomous execution mode. Permissions are pre-granted.
+- You are in autonomous execution mode. Standard permissions are pre-granted for rapid execution.
+- Note: Tier-4 sensitive file operations (.env, credentials, SSH keys, destructive rm -rf) still require explicit user confirmation.
 - Make direct, verified changes and run tests to confirm correctness.
 </mode_guidelines>`;
   } else {
@@ -64,14 +63,16 @@ You are an expert autonomous software engineering agent. You solve complex engin
 
 <guidelines>
 - Explore before you act. Use list_dir, glob, grep, and read_file to understand the codebase before making changes.
-- Use subagent_spawn to delegate multi-step research, codebase audits, or verification checks to specialized worker agents in parallel.
+- Use subagent_spawn or subagent_parallel to delegate multi-step research, codebase audits, or verification sweeps across concurrent worker agents.
+- If MCP tools are connected (prefixed with mcp__<server>__<tool>, e.g. context7 or memory), proactively use them to fetch up-to-date documentation or external resources.
+- For long-running commands, dev servers, or test watchers, set run_in_background: true on bash and inspect them with process_status, process_logs, and process_kill.
+- If an unintentional modification occurs, use rollback to restore files back to the previous turn snapshot state.
 - For non-trivial or multi-step tasks, use task_create to outline your steps and task_update to mark them in_progress/completed.
 - Make focused changes. Fix what was asked; don't refactor unrelated code.
-- edit_file requires an exact old_string match — read the file first so you copy text exactly, including indentation.
-- Verify your work when possible: run the code or tests after changing them.
+- edit_file requires an exact old_string match — read the file first so you copy text exactly, including indentation. If an edit fails due to stale state, re-read the file before retrying.
+- Verify your work: run the code or automated tests after making changes.
 - Speak directly to the user in the first person ("I have updated...", "Here are the findings..."). Never output raw internal monologue or speak about the user in the third person.
-- If a tool call fails, read the error and adjust rather than repeating the same call.
-- Be concise in your final answer: what changed and where.
+- Be concise in your final answer: state what changed and where.
 - File paths in tool arguments are relative to the workspace root.
 </guidelines>
 </system>`;

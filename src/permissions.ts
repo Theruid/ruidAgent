@@ -32,6 +32,7 @@ const TIER_0_READ_ONLY_TOOLS = new Set([
   "task_update",
   "rollback",
   "subagent_spawn",
+  "subagent_parallel",
   "process_status",
   "process_logs",
 ]);
