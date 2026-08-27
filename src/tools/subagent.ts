@@ -26,9 +26,17 @@ export function subagentTool(
           type: "string",
           description: "Detailed, self-contained prompt describing the delegated task and expected return output",
         },
+        output_schema: {
+          type: "object",
+          description: "Optional JSON Schema that the sub-agent MUST conform its return output to",
+        },
+        isolate_worktree: {
+          type: "boolean",
+          description: "Run modifying subagent inside an isolated git worktree (default false)",
+        },
         maxIterations: {
           type: "number",
-          description: "Max iterations for the sub-agent (default 10, max 25)",
+          description: "Max iterations for the sub-agent (default 12, max 30)",
         },
       },
       required: ["role", "prompt"],
@@ -36,11 +44,15 @@ export function subagentTool(
     schema: z.object({
       role: z.enum(["explore", "coder", "reviewer", "general"]).default("general"),
       prompt: z.string().min(1),
-      maxIterations: z.number().int().min(1).max(25).optional().default(10),
+      output_schema: z.record(z.unknown()).optional(),
+      isolate_worktree: z.boolean().optional().default(false),
+      maxIterations: z.number().int().min(1).max(30).optional().default(12),
     }),
     async execute(args: {
       role: SubagentRole;
       prompt: string;
+      output_schema?: Record<string, unknown>;
+      isolate_worktree?: boolean;
       maxIterations?: number;
     }): Promise<string> {
       if (signal?.aborted) {
@@ -53,7 +65,9 @@ export function subagentTool(
         provider,
         model,
         workspaceRoot: ws.root,
-        maxIterations: args.maxIterations ?? 10,
+        outputSchema: args.output_schema,
+        isolateWorktree: args.isolate_worktree,
+        maxIterations: args.maxIterations ?? 12,
         signal,
       });
 

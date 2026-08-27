@@ -36,6 +36,8 @@ export interface PendingPermission {
 export interface SessionUsage {
   inputTokens: number;
   outputTokens: number;
+  cacheCreationInputTokens: number;
+  cacheReadInputTokens: number;
   totalCost: number;
 }
 
@@ -105,6 +107,8 @@ export class AgentUIStore {
       sessionUsage: {
         inputTokens: 0,
         outputTokens: 0,
+        cacheCreationInputTokens: 0,
+        cacheReadInputTokens: 0,
         totalCost: 0,
       },
       lastTurnDurationMs: 0,
@@ -334,12 +338,16 @@ export class AgentUIStore {
       case "usage": {
         const newIn = this.state.sessionUsage.inputTokens + e.inputTokens;
         const newOut = this.state.sessionUsage.outputTokens + e.outputTokens;
-        const totalCost = calculateCost(this.state.model, newIn, newOut);
+        const newCacheCreation = this.state.sessionUsage.cacheCreationInputTokens + (e.cacheCreationInputTokens ?? 0);
+        const newCacheRead = this.state.sessionUsage.cacheReadInputTokens + (e.cacheReadInputTokens ?? 0);
+        const totalCost = calculateCost(this.state.model, newIn, newOut, newCacheRead, newCacheCreation);
         this.set(
           {
             sessionUsage: {
               inputTokens: newIn,
               outputTokens: newOut,
+              cacheCreationInputTokens: newCacheCreation,
+              cacheReadInputTokens: newCacheRead,
               totalCost,
             },
             lastTurnDurationMs: e.durationMs ?? this.state.lastTurnDurationMs,

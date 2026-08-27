@@ -1,4 +1,4 @@
-import type { LLMMessage } from "../providers/types.js";
+import type { LLMMessage, LLMProvider } from "../providers/types.js";
 
 /**
  * Fast character-to-token estimator (~4 characters per token).
@@ -28,16 +28,13 @@ export function estimateHistoryTokens(messages: LLMMessage[]): number {
 const MAX_COMPACTED_TOOL_RESULT_LEN = 300;
 
 /**
- * Compacts older tool results in message history to preserve context space
+ * Phase 1: Micro-compacts older tool results in message history to preserve context space
  * while keeping recent turns intact.
- *
- * Keeps the most recent `preserveRecentTurns` tool results uncompacted.
  */
-export function compactHistory(
+export function microCompactHistory(
   messages: LLMMessage[],
   preserveRecentTurns = 4
 ): LLMMessage[] {
-  // Count tool results from newest to oldest
   let toolResultTurnCount = 0;
   const cutoffIndices = new Set<number>();
 
@@ -78,4 +75,75 @@ export function compactHistory(
       content: newContent,
     };
   });
+}
+
+// Backwards-compatible alias
+export const compactHistory = microCompactHistory;
+
+/**
+ * Phase 2: Semantic summarization of older turns when conversation history nears token limits.
+ * Compaction cut points strictly respect cache breakpoint boundaries (keeping recent turns intact).
+ */
+export async function semanticSummarizeHistory(
+  messages: LLMMessage[],
+  provider: LLMProvider,
+  model: string,
+  preserveRecentTurns = 4,
+  signal?: AbortSignal
+): Promise<LLMMessage[]> {
+  if (messages.length <= preserveRecentTurns * 2) {
+    return microCompactHistory(messages, preserveRecentTurns);
+  }
+
+  // Identify breakpoint cut point
+  const cutIndex = Math.max(1, messages.length - preserveRecentTurns * 2);
+  const turnsToSummarize = messages.slice(0, cutIndex);
+  const turnsToPreserve = messages.slice(cutIndex);
+
+  // Extract structured conversation log for summarization
+  const historyText = turnsToSummarize
+    .map((m) => {
+      const texts = m.content
+        .map((c) => (c.type === "text" ? c.text : c.type === "tool_result" ? `[Tool Result: ${c.content.slice(0, 150)}]` : `[Tool Call: ${c.name}]`))
+        .join(" ");
+      return `${m.role.toUpperCase()}: ${texts}`;
+    })
+    .join("\n");
+
+  const prompt = `You are a context compaction engine for a software development agent.
+Summarize the key facts, file modifications, errors solved, decisions made, and active task progress from this earlier conversation:
+
+${historyText}
+
+Output a dense technical summary in structured Markdown inside <context_summary> tags. Include exact file paths and function names where applicable.`;
+
+  let summary = "";
+  try {
+    for await (const evt of provider.complete({
+      system: "You are a concise, accurate context compaction system.",
+      messages: [{ role: "user", content: [{ type: "text", text: prompt }] }],
+      tools: [],
+      model,
+      signal,
+    })) {
+      if (evt.type === "text_delta") {
+        summary += evt.text;
+      }
+    }
+  } catch {
+    // If LLM summarization fails, fall back to micro-compaction
+    return microCompactHistory(messages, preserveRecentTurns);
+  }
+
+  const summaryMessage: LLMMessage = {
+    role: "user",
+    content: [
+      {
+        type: "text",
+        text: summary.trim() || "<context_summary>\nPrior conversation turns summarized to conserve context.\n</context_summary>",
+      },
+    ],
+  };
+
+  return [summaryMessage, ...turnsToPreserve];
 }

@@ -4,6 +4,8 @@ import type {
   LLMProvider,
   ProviderConfig,
   StreamEvent,
+  SystemPromptBlock,
+  Usage,
 } from "./types.js";
 import { sseDataLines } from "./types.js";
 import { fetchWithRetry } from "./retry.js";
@@ -44,6 +46,35 @@ export function createAnthropicProvider(config: ProviderConfig): LLMProvider {
 
     async *complete(req: CompletionRequest): AsyncIterable<StreamEvent> {
       let res: Response;
+
+      // Format system prompt as block array with cache control if available
+      let systemPayload: any = req.system;
+      if (Array.isArray(req.system)) {
+        systemPayload = req.system.map((block: SystemPromptBlock) => ({
+          type: "text",
+          text: block.text,
+          ...(block.cacheControl ? { cache_control: block.cacheControl } : {}),
+        }));
+      }
+
+      // Add cache_control to the last tool definition to cache the static tool prefix
+      const toolsPayload = req.tools.map((t, idx) => {
+        const isLastTool = idx === req.tools.length - 1;
+        const cacheControl = t.cacheControl ?? (isLastTool ? { type: "ephemeral" as const } : undefined);
+        return {
+          name: t.name,
+          description: t.description,
+          input_schema: t.parameters,
+          ...(cacheControl ? { cache_control: cacheControl } : {}),
+        };
+      });
+
+      // Prepare messages with rolling cache control at stable N-2 index
+      const messagesPayload = req.messages.map((m, mIdx) => {
+        const isRollingCacheTurn = req.messages.length >= 3 && mIdx === req.messages.length - 2 && m.role === "user";
+        return translateMessage(m, isRollingCacheTurn);
+      });
+
       try {
         res = await fetchWithRetry(
           `${baseUrl}/v1/messages`,
@@ -53,18 +84,15 @@ export function createAnthropicProvider(config: ProviderConfig): LLMProvider {
               "content-type": "application/json",
               "x-api-key": apiKey,
               "anthropic-version": "2023-06-01",
+              "anthropic-beta": "prompt-caching-2024-07-31",
               ...config.headers,
             },
             body: JSON.stringify({
               model: req.model,
               max_tokens: 8192,
-              system: req.system,
-              messages: req.messages.map(translateMessage),
-              tools: req.tools.map((t) => ({
-                name: t.name,
-                description: t.description,
-                input_schema: t.parameters,
-              })),
+              system: systemPayload,
+              messages: messagesPayload,
+              tools: toolsPayload.length > 0 ? toolsPayload : undefined,
               stream: true,
             }),
           },
@@ -91,29 +119,39 @@ export function createAnthropicProvider(config: ProviderConfig): LLMProvider {
 
 // Our canonical shape maps ~1:1 onto Anthropic's wire format; tool_result
 // blocks live inside user messages per the API contract.
-function translateMessage(m: LLMMessage) {
+function translateMessage(m: LLMMessage, addCacheControl = false) {
+  const contentBlocks = m.content.map((c, cIdx) => {
+    const isLastBlock = cIdx === m.content.length - 1;
+    const cache_control = addCacheControl && isLastBlock ? { type: "ephemeral" as const } : undefined;
+
+    switch (c.type) {
+      case "text":
+        return {
+          type: "text",
+          text: c.text,
+          ...(c.cacheControl ? { cache_control: c.cacheControl } : cache_control ? { cache_control } : {}),
+        };
+      case "tool_call":
+        return { type: "tool_use", id: c.id, name: c.name, input: c.input };
+      case "tool_result":
+        return {
+          type: "tool_result",
+          tool_use_id: c.toolCallId,
+          content: c.content,
+          ...(c.isError ? { is_error: true } : {}),
+          ...(c.cacheControl ? { cache_control: c.cacheControl } : cache_control ? { cache_control } : {}),
+        };
+    }
+  });
+
   return {
     role: m.role,
-    content: m.content.map((c) => {
-      switch (c.type) {
-        case "text":
-          return { type: "text", text: c.text };
-        case "tool_call":
-          return { type: "tool_use", id: c.id, name: c.name, input: c.input };
-        case "tool_result":
-          return {
-            type: "tool_result",
-            tool_use_id: c.toolCallId,
-            content: c.content,
-            ...(c.isError ? { is_error: true } : {}),
-          };
-      }
-    }),
+    content: contentBlocks,
   };
 }
 
 async function* parseStream(body: ReadableStream<Uint8Array>): AsyncIterable<StreamEvent> {
-  let usage: { inputTokens: number; outputTokens: number } | undefined;
+  let usage: Usage | undefined;
   let stopReason: string | null = null;
 
   // tool_use blocks stream their JSON args in fragments; accumulate until
@@ -134,6 +172,8 @@ async function* parseStream(body: ReadableStream<Uint8Array>): AsyncIterable<Str
           usage = {
             inputTokens: evt.message.usage.input_tokens ?? 0,
             outputTokens: evt.message.usage.output_tokens ?? 0,
+            cacheCreationInputTokens: evt.message.usage.cache_creation_input_tokens ?? 0,
+            cacheReadInputTokens: evt.message.usage.cache_read_input_tokens ?? 0,
           };
         }
         break;
@@ -181,7 +221,9 @@ async function* parseStream(body: ReadableStream<Uint8Array>): AsyncIterable<Str
         if (evt.usage) {
           usage = {
             inputTokens: evt.usage.input_tokens ?? usage?.inputTokens ?? 0,
-            outputTokens: evt.usage.output_tokens ?? 0,
+            outputTokens: evt.usage.output_tokens ?? usage?.outputTokens ?? 0,
+            cacheCreationInputTokens: evt.usage.cache_creation_input_tokens ?? usage?.cacheCreationInputTokens ?? 0,
+            cacheReadInputTokens: evt.usage.cache_read_input_tokens ?? usage?.cacheReadInputTokens ?? 0,
           };
         }
         break;

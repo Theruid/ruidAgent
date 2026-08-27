@@ -2,6 +2,7 @@ import type { LLMProvider, LLMMessage } from "../providers/types.js";
 import { runAgentLoop, type LoopEvent } from "./loop.js";
 import { Workspace } from "../tools/fs.js";
 import { createDeferredPermissions } from "../permissions.js";
+import { createWorktree } from "./worktree.js";
 
 export type SubagentRole = "explore" | "coder" | "reviewer" | "general";
 
@@ -12,6 +13,8 @@ export interface SubagentOptions {
   model: string;
   workspaceRoot?: string;
   maxIterations?: number;
+  outputSchema?: Record<string, unknown>;
+  isolateWorktree?: boolean;
   onProgress?: (text: string) => void;
   signal?: AbortSignal;
 }
@@ -19,11 +22,21 @@ export interface SubagentOptions {
 export function buildSubagentSystemPrompt(
   role: SubagentRole,
   workspaceRoot: string,
-  platform: string
+  platform: string,
+  outputSchema?: Record<string, unknown>
 ): string {
   const baseHeader = `You are a specialized sub-agent [ROLE: ${role.toUpperCase()}] working in ${workspaceRoot} on ${platform}.
 Your mission is to perform a focused task delegated by the main orchestrator agent.
 Be thorough in tool usage, and concise in your final output. Return ONLY the direct findings/results without filler.`;
+
+  let schemaInstructions = "";
+  if (outputSchema) {
+    schemaInstructions = `\n\n<structured_output_requirement>
+You MUST return your final result conforming to this JSON Schema:
+${JSON.stringify(outputSchema, null, 2)}
+Conclude by outputting ONLY the validated JSON object.
+</structured_output_requirement>`;
+  }
 
   switch (role) {
     case "explore":
@@ -33,7 +46,7 @@ Role Guidelines:
 - You are a read-only research specialist.
 - Use read_file, glob, grep, list_dir, git_status, and git_log to investigate code, find definitions, and trace dependencies.
 - Do not attempt to modify files.
-- Summarize your exact findings, file paths, line numbers, and patterns discovered.`;
+- Summarize your exact findings, file paths, line numbers, and patterns discovered.${schemaInstructions}`;
 
     case "reviewer":
       return `${baseHeader}
@@ -41,7 +54,7 @@ Role Guidelines:
 Role Guidelines:
 - You are an adversarial code reviewer and verification specialist.
 - Inspect changes via git_diff, check modified files, and run tests or linters via bash if needed.
-- Report any syntax issues, bugs, regressions, or test failures clearly.`;
+- Report any syntax issues, bugs, regressions, or test failures clearly.${schemaInstructions}`;
 
     case "coder":
       return `${baseHeader}
@@ -49,26 +62,38 @@ Role Guidelines:
 Role Guidelines:
 - You are an implementation specialist.
 - Read files carefully before modifying them with edit_file or write_file.
-- Make focused, precise edits and verify changes when done.`;
+- Make focused, precise edits and verify changes when done.${schemaInstructions}`;
 
     case "general":
     default:
       return `${baseHeader}
 
 Role Guidelines:
-- Accomplish the task using all available tools and provide a clear final summary.`;
+- Accomplish the task using all available tools and provide a clear final summary.${schemaInstructions}`;
   }
 }
 
 /**
- * Executes a sub-agent in an isolated context loop.
+ * Executes a sub-agent in an isolated context loop (and optional git worktree).
  * Returns the final synthesized answer from the sub-agent.
  */
 export async function runSubagent(opts: SubagentOptions): Promise<string> {
-  const ws = new Workspace(opts.workspaceRoot ?? process.cwd());
-  const maxIterations = opts.maxIterations ?? 10;
+  const baseRoot = opts.workspaceRoot ?? process.cwd();
+  let activeRoot = baseRoot;
+  let worktree;
 
-  // In auto/sub-agent mode, allow all standard tools without interactive prompts
+  if (opts.isolateWorktree) {
+    try {
+      worktree = await createWorktree(baseRoot);
+      activeRoot = worktree.path;
+    } catch {
+      // If worktree creation fails (e.g. not a git repo), proceed in main workspace root
+    }
+  }
+
+  const ws = new Workspace(activeRoot);
+  const maxIterations = opts.maxIterations ?? 12;
+
   const permissions = createDeferredPermissions(
     new Set([
       "read_file",
@@ -91,31 +116,37 @@ export async function runSubagent(opts: SubagentOptions): Promise<string> {
   let finalAnswer = "";
   const events: LoopEvent[] = [];
 
-  const history: LLMMessage[] = await runAgentLoop({
-    provider: opts.provider,
-    model: opts.model,
-    workspaceRoot: ws.root,
-    initialPrompt: opts.prompt,
-    maxIterations,
-    permissions: permissions.manager,
-    signal: opts.signal,
-    onEvent: (event) => {
-      events.push(event);
-      if (event.type === "text_delta") {
-        opts.onProgress?.(event.text);
-      }
-    },
-  });
+  try {
+    const history: LLMMessage[] = await runAgentLoop({
+      provider: opts.provider,
+      model: opts.model,
+      workspaceRoot: ws.root,
+      initialPrompt: opts.prompt,
+      maxIterations,
+      permissions: permissions.manager,
+      signal: opts.signal,
+      onEvent: (event) => {
+        events.push(event);
+        if (event.type === "text_delta") {
+          opts.onProgress?.(event.text);
+        }
+      },
+    });
 
-  // Extract the assistant's final text answer from history
-  for (let i = history.length - 1; i >= 0; i--) {
-    const msg = history[i];
-    if (msg.role === "assistant") {
-      const textBlocks = msg.content.filter((c): c is Extract<typeof c, { type: "text" }> => c.type === "text");
-      if (textBlocks.length > 0) {
-        finalAnswer = textBlocks.map((b) => b.text).join("\n").trim();
-        break;
+    // Extract the assistant's final text answer from history
+    for (let i = history.length - 1; i >= 0; i--) {
+      const msg = history[i];
+      if (msg.role === "assistant") {
+        const textBlocks = msg.content.filter((c): c is Extract<typeof c, { type: "text" }> => c.type === "text");
+        if (textBlocks.length > 0) {
+          finalAnswer = textBlocks.map((b) => b.text).join("\n").trim();
+          break;
+        }
       }
+    }
+  } finally {
+    if (worktree) {
+      await worktree.cleanup();
     }
   }
 

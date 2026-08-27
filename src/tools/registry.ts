@@ -1,12 +1,13 @@
-import type { z } from "zod";
+import { z } from "zod";
 import { Workspace, readFileTool, writeFileTool, editFileTool, listDirTool, globTool } from "./fs.js";
 import { grepTool } from "./search.js";
-import { bashTool } from "./bash.js";
+import { bashTool, ProcessManager, processStatusTool, processLogsTool, processKillTool } from "./bash.js";
 import { gitStatusTool, gitDiffTool, gitLogTool } from "./git.js";
 import { TaskStore, taskCreateTool, taskUpdateTool, taskListTool } from "./tasks.js";
 import { SnapshotManager, rollbackTool } from "./snapshot.js";
 import { subagentTool } from "./subagent.js";
 import type { ToolDef, LLMProvider } from "../providers/types.js";
+import type { MCPClient } from "../mcp/client.js";
 
 export interface AgentTool {
   name: string;
@@ -24,7 +25,10 @@ export function buildRegistry(
   snapshots = new SnapshotManager(),
   provider?: LLMProvider,
   model?: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  processManager = new ProcessManager(),
+  onBashChunk?: (chunk: string, stream: "stdout" | "stderr") => void,
+  mcpClients: MCPClient[] = []
 ): Map<string, AgentTool> {
   const tools: AgentTool[] = [
     { ...readFileTool(ws), requiresPermission: false },
@@ -37,13 +41,40 @@ export function buildRegistry(
     { ...taskListTool(taskStore), requiresPermission: false },
     { ...taskCreateTool(taskStore), requiresPermission: false },
     { ...taskUpdateTool(taskStore), requiresPermission: false },
+    { ...processStatusTool(processManager), requiresPermission: false },
+    { ...processLogsTool(processManager), requiresPermission: false },
+    { ...processKillTool(processManager), requiresPermission: true },
     { ...rollbackTool(ws, snapshots), requiresPermission: false },
     ...(provider && model ? [{ ...subagentTool(ws, provider, model, signal), requiresPermission: false }] : []),
     { ...writeFileTool(ws, snapshots), requiresPermission: true },
     { ...editFileTool(ws, snapshots), requiresPermission: true },
-    { ...bashTool(ws), requiresPermission: true },
+    { ...bashTool(ws, processManager, onBashChunk), requiresPermission: true },
   ];
-  return new Map(tools.map((t) => [t.name, t]));
+
+  const registry = new Map(tools.map((t) => [t.name, t]));
+
+  // Dynamically attach MCP tools
+  for (const client of mcpClients) {
+    client.listTools().then((mcpTools) => {
+      for (const mcpTool of mcpTools) {
+        const namespacedName = `mcp__${client.serverName}__${mcpTool.name}`;
+        registry.set(namespacedName, {
+          name: namespacedName,
+          description: mcpTool.description || `MCP tool from ${client.serverName}`,
+          parameters: mcpTool.inputSchema ?? { type: "object", properties: {} },
+          schema: z.record(z.unknown()).optional(),
+          execute: async (args: any) => {
+            const res = await client.callTool(mcpTool.name, args);
+            if (res.isError) throw new Error(res.content);
+            return res.content;
+          },
+          requiresPermission: !client.config.trusted, // Untrusted by default
+        });
+      }
+    }).catch(() => {});
+  }
+
+  return registry;
 }
 
 export function toToolDefs(registry: Map<string, AgentTool>): ToolDef[] {

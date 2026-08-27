@@ -3,9 +3,14 @@
 
 export type Role = "user" | "assistant";
 
+export interface CacheControl {
+  type: "ephemeral";
+}
+
 export interface TextContent {
   type: "text";
   text: string;
+  cacheControl?: CacheControl;
 }
 
 export interface ToolCallContent {
@@ -20,6 +25,7 @@ export interface ToolResultContent {
   toolCallId: string;
   content: string;
   isError?: boolean;
+  cacheControl?: CacheControl;
 }
 
 export type AssistantContent = TextContent | ToolCallContent;
@@ -35,6 +41,13 @@ export interface ToolDef {
   name: string;
   description: string;
   parameters: Record<string, unknown>; // JSON Schema
+  cacheControl?: CacheControl;
+}
+
+export interface SystemPromptBlock {
+  type: "text";
+  text: string;
+  cacheControl?: CacheControl;
 }
 
 export type StreamEvent =
@@ -48,10 +61,12 @@ export type StreamEvent =
 export interface Usage {
   inputTokens: number;
   outputTokens: number;
+  cacheCreationInputTokens?: number;
+  cacheReadInputTokens?: number;
 }
 
 export interface CompletionRequest {
-  system: string;
+  system: string | SystemPromptBlock[];
   messages: LLMMessage[];
   tools: ToolDef[];
   signal?: AbortSignal;

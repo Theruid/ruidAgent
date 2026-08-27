@@ -4,6 +4,7 @@ import type {
   LLMProvider,
   ProviderConfig,
   StreamEvent,
+  SystemPromptBlock,
 } from "./types.js";
 import { sseDataLines } from "./types.js";
 import { fetchWithRetry } from "./retry.js";
@@ -74,6 +75,10 @@ export function createOpenAIProvider(config: ProviderConfig): LLMProvider {
       };
       if (apiKey) headers["authorization"] = `Bearer ${apiKey}`;
 
+      const systemContent = Array.isArray(req.system)
+        ? req.system.map((b: SystemPromptBlock) => b.text).join("\n\n")
+        : req.system;
+
       let res: Response;
       try {
         res = await fetchWithRetry(
@@ -86,7 +91,7 @@ export function createOpenAIProvider(config: ProviderConfig): LLMProvider {
               stream: true,
               stream_options: { include_usage: true },
               messages: [
-                { role: "system", content: req.system },
+                { role: "system", content: systemContent },
                 ...req.messages.map(translateMessage),
               ],
               ...(req.tools.length > 0 && {

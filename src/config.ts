@@ -3,6 +3,15 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import type { ProviderConfig } from "./providers/types.js";
 
+export interface MCPServerConfig {
+  command?: string;
+  args?: string[];
+  url?: string;
+  env?: Record<string, string>;
+  disabled?: boolean;
+  trusted?: boolean;
+}
+
 export interface AppConfig {
   providers: Record<string, ProviderConfig>;
   default: { provider: string; model: string };
@@ -10,6 +19,7 @@ export interface AppConfig {
     autoApprove?: string[]; // tool names never to prompt for
     alwaysAsk?: string[];
   };
+  mcpServers?: Record<string, MCPServerConfig>;
   maxIterations?: number;
 }
 
@@ -40,7 +50,7 @@ export const DEFAULT_CONFIG: AppConfig = {
     },
     deepseek: {
       type: "openai",
-      baseUrl: "https://api.deepseek.com",
+      baseUrl: "https://deepseek.com",
       apiKeyEnv: "DEEPSEEK_API_KEY",
       defaultModel: "deepseek-chat",
       models: ["deepseek-chat", "deepseek-reasoner"],
@@ -105,6 +115,7 @@ export function loadConfig(overrides?: Partial<AppConfig>): AppConfig {
     ...fileConfig,
     ...overrides,
     providers: mergedProviders,
+    mcpServers: { ...(fileConfig.mcpServers ?? {}), ...(overrides?.mcpServers ?? {}) },
     default: overrides?.default ?? fileConfig.default ?? DEFAULT_CONFIG.default,
     permissions: { ...(fileConfig.permissions ?? {}), ...(overrides?.permissions ?? {}) },
   };

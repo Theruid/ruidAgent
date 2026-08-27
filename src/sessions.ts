@@ -3,7 +3,10 @@ import { join } from "node:path";
 import type { LLMMessage } from "./providers/types.js";
 import { ensureConfigDir } from "./config.js";
 
+export const CURRENT_SESSION_SCHEMA_VERSION = 2;
+
 export interface StoredSession {
+  schemaVersion: number;
   id: string;
   title: string;
   createdAt: number;
@@ -11,16 +14,49 @@ export interface StoredSession {
   providerName: string;
   model: string;
   messages: LLMMessage[];
+  metadata?: Record<string, unknown>;
 }
 
 function sessionsDir(): string {
   return join(ensureConfigDir(), "sessions");
 }
 
-export function saveSession(sess: StoredSession): void {
+export function migrateSession(raw: any): StoredSession {
+  const version = typeof raw?.schemaVersion === "number" ? raw.schemaVersion : 1;
+
+  let session: StoredSession = {
+    schemaVersion: CURRENT_SESSION_SCHEMA_VERSION,
+    id: typeof raw?.id === "string" ? raw.id : newSessionId(),
+    title: typeof raw?.title === "string" ? raw.title : "(untitled)",
+    createdAt: typeof raw?.createdAt === "number" ? raw.createdAt : Date.now(),
+    updatedAt: typeof raw?.updatedAt === "number" ? raw.updatedAt : Date.now(),
+    providerName: typeof raw?.providerName === "string" ? raw.providerName : "?",
+    model: typeof raw?.model === "string" ? raw.model : "?",
+    messages: Array.isArray(raw?.messages) ? raw.messages : [],
+    metadata: typeof raw?.metadata === "object" && raw.metadata !== null ? raw.metadata : {},
+  };
+
+  if (version === 1) {
+    // Migration v1 -> v2: Ensure every message has valid content blocks
+    session.messages = session.messages.map((m: any) => {
+      if (typeof m?.content === "string") {
+        return { role: m.role, content: [{ type: "text", text: m.content }] };
+      }
+      return m;
+    });
+  }
+
+  return session;
+}
+
+export function saveSession(sess: Omit<StoredSession, "schemaVersion"> & { schemaVersion?: number }): void {
   mkdirSync(sessionsDir(), { recursive: true });
-  sess.updatedAt = Date.now();
-  writeFileSync(join(sessionsDir(), `${sess.id}.json`), JSON.stringify(sess, null, 2));
+  const fullSession: StoredSession = {
+    ...sess,
+    schemaVersion: CURRENT_SESSION_SCHEMA_VERSION,
+    updatedAt: Date.now(),
+  };
+  writeFileSync(join(sessionsDir(), `${fullSession.id}.json`), JSON.stringify(fullSession, null, 2));
 }
 
 export function deleteSession(id: string): void {
@@ -40,15 +76,7 @@ export function listSessions(): StoredSession[] {
     try {
       const raw = JSON.parse(readFileSync(join(sessionsDir(), f), "utf8"));
       if (typeof raw?.id === "string" && Array.isArray(raw?.messages)) {
-        sessions.push({
-          id: raw.id,
-          title: typeof raw.title === "string" ? raw.title : "(untitled)",
-          createdAt: raw.createdAt ?? 0,
-          updatedAt: raw.updatedAt ?? 0,
-          providerName: raw.providerName ?? "?",
-          model: raw.model ?? "?",
-          messages: raw.messages,
-        });
+        sessions.push(migrateSession(raw));
       }
     } catch {
       // skip unreadable/corrupt session files
@@ -59,7 +87,8 @@ export function listSessions(): StoredSession[] {
 
 export function loadSession(id: string): StoredSession | null {
   try {
-    return JSON.parse(readFileSync(join(sessionsDir(), `${id}.json`), "utf8"));
+    const raw = JSON.parse(readFileSync(join(sessionsDir(), `${id}.json`), "utf8"));
+    return migrateSession(raw);
   } catch {
     return null;
   }

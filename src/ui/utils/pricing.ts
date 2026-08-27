@@ -33,9 +33,16 @@ const PRICING_PER_MILLION: Record<string, [number, number]> = {
 const DEFAULT_RATES: [number, number] = [2.5, 10.0];
 
 /**
- * Calculates estimated USD cost from token usage for a given model.
+ * Calculates estimated USD cost from token usage for a given model,
+ * accounting for prompt caching discounts (0.1x for cache reads, 1.25x for cache creation).
  */
-export function calculateCost(model: string, inTokens: number, outTokens: number): number {
+export function calculateCost(
+  model: string,
+  inTokens: number,
+  outTokens: number,
+  cacheReadTokens = 0,
+  cacheCreationTokens = 0
+): number {
   const normalized = (model || "").toLowerCase();
   let rates = DEFAULT_RATES;
 
@@ -46,9 +53,15 @@ export function calculateCost(model: string, inTokens: number, outTokens: number
     }
   }
 
-  const inCost = (inTokens / 1_000_000) * rates[0];
+  // Base prompt tokens excluding cache read/creation
+  const baseInputTokens = Math.max(0, inTokens - cacheReadTokens - cacheCreationTokens);
+
+  const baseInputCost = (baseInputTokens / 1_000_000) * rates[0];
+  const cacheReadCost = (cacheReadTokens / 1_000_000) * (rates[0] * 0.1);
+  const cacheCreationCost = (cacheCreationTokens / 1_000_000) * (rates[0] * 1.25);
   const outCost = (outTokens / 1_000_000) * rates[1];
-  return inCost + outCost;
+
+  return baseInputCost + cacheReadCost + cacheCreationCost + outCost;
 }
 
 /**
