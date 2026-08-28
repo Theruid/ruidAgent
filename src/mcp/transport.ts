@@ -20,7 +20,7 @@ export class StdioTransport implements MCPTransport {
 
     this.child = spawn(cmd, args, {
       env: { ...process.env, ...env },
-      stdio: ["pipe", "pipe", "inherit"],
+      stdio: ["pipe", "pipe", "pipe"],
       shell: isWin,
     });
 
