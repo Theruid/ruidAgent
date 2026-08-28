@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Documentation — ruid Coding Agent</title>
+  <meta name="description" content="Complete documentation, guides, provider configuration, commands, and architecture for ruid terminal coding agent.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #090d16;
+      --sidebar-bg: #060911;
+      --card-bg: #0b0f19;
+      --border: rgba(255, 255, 255, 0.08);
+      --border-accent: rgba(56, 189, 248, 0.35);
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --text-sub: #64748b;
+      --primary: #38bdf8;
+      --primary-glow: rgba(56, 189, 248, 0.2);
+      --green: #22c55e;
+      --yellow: #eab308;
+      --purple: #c084fc;
+      --code-bg: #030712;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* Ambient background */
+    .glow-bg {
+      position: fixed;
+      top: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 100vw;
+      height: 100vh;
+      pointer-events: none;
+      z-index: -2;
+      background:
+        radial-gradient(circle at 50% 0%, rgba(56, 189, 248, 0.08), transparent 45%),
+        radial-gradient(circle at 85% 20%, rgba(99, 102, 241, 0.05), transparent 35%);
+    }
+
+    /* Header Nav */
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      background: rgba(9, 13, 22, 0.85);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      height: 60px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 1.5rem;
+    }
+
+    .brand-wrap {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: var(--text);
+      text-decoration: none;
+    }
+
+    .brand-badge {
+      font-size: 0.7rem;
+      padding: 0.15rem 0.45rem;
+      border-radius: 4px;
+      background: rgba(56, 189, 248, 0.12);
+      border: 1px solid var(--border-accent);
+      color: var(--primary);
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .header-links {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .search-input-wrap {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+
+    .search-input {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.35rem 0.75rem 0.35rem 2rem;
+      color: var(--text);
+      font-size: 0.82rem;
+      outline: none;
+      width: 220px;
+      transition: all 0.2s;
+      font-family: inherit;
+    }
+
+    .search-input:focus {
+      border-color: var(--primary);
+      width: 280px;
+      background: rgba(255, 255, 255, 0.08);
+      box-shadow: 0 0 12px var(--primary-glow);
+    }
+
+    .search-icon {
+      position: absolute;
+      left: 0.65rem;
+      width: 14px;
+      height: 14px;
+      color: var(--text-sub);
+      pointer-events: none;
+    }
+
+    .btn-nav {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.35rem 0.75rem;
+      border-radius: 6px;
+      font-size: 0.82rem;
+      font-weight: 500;
+      color: var(--text-muted);
+      text-decoration: none;
+      border: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.02);
+      transition: all 0.2s;
+    }
+
+    .btn-nav:hover {
+      color: #fff;
+      border-color: var(--primary);
+      background: rgba(56, 189, 248, 0.08);
+    }
+
+    /* Main Container */
+    .docs-layout {
+      display: flex;
+      max-width: 1440px;
+      margin: 0 auto;
+      min-height: calc(100vh - 60px);
+    }
+
+    /* Left Sidebar */
+    .sidebar {
+      width: 280px;
+      min-width: 280px;
+      position: sticky;
+      top: 60px;
+      height: calc(100vh - 60px);
+      overflow-y: auto;
+      padding: 1.5rem 1rem 3rem 1.5rem;
+      border-right: 1px solid var(--border);
+      background: var(--sidebar-bg);
+    }
+
+    .sidebar-group {
+      margin-bottom: 1.5rem;
+    }
+
+    .sidebar-title {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      color: var(--text-sub);
+      margin-bottom: 0.5rem;
+      padding-left: 0.5rem;
+    }
+
+    .sidebar-nav {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .sidebar-link {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.4rem 0.6rem;
+      border-radius: 5px;
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 0.85rem;
+      transition: all 0.15s;
+    }
+
+    .sidebar-link:hover {
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.04);
+    }
+
+    .sidebar-link.active {
+      color: var(--primary);
+      background: rgba(56, 189, 248, 0.1);
+      font-weight: 600;
+    }
+
+    /* Main Content */
+    .content-area {
+      flex: 1;
+      padding: 2.5rem 3.5rem 6rem;
+      max-width: 960px;
+    }
+
+    h1 {
+      font-size: 2.2rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.75rem;
+      color: #fff;
+    }
+
+    .lead-text {
+      font-size: 1.1rem;
+      color: var(--text-muted);
+      margin-bottom: 2rem;
+      line-height: 1.6;
+    }
+
+    h2 {
+      font-size: 1.45rem;
+      font-weight: 700;
+      margin-top: 3rem;
+      margin-bottom: 1rem;
+      padding-bottom: 0.4rem;
+      border-bottom: 1px solid var(--border);
+      color: #fff;
+    }
+
+    h3 {
+      font-size: 1.1rem;
+      font-weight: 600;
+      margin-top: 1.75rem;
+      margin-bottom: 0.75rem;
+      color: #e2e8f0;
+    }
+
+    p {
+      color: #cbd5e1;
+      margin-bottom: 1rem;
+    }
+
+    ul, ol {
+      margin-left: 1.5rem;
+      margin-bottom: 1.25rem;
+      color: #cbd5e1;
+    }
+
+    li {
+      margin-bottom: 0.35rem;
+    }
+
+    /* Code Blocks & Tables */
+    pre {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem 1.25rem;
+      overflow-x: auto;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.84rem;
+      margin-bottom: 1.25rem;
+      position: relative;
+    }
+
+    code {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85em;
+      background: rgba(255, 255, 255, 0.06);
+      padding: 0.15rem 0.35rem;
+      border-radius: 4px;
+      color: var(--primary);
+    }
+
+    pre code {
+      background: transparent;
+      padding: 0;
+      color: #f1f5f9;
+    }
+
+    .callout {
+      border-left: 3px solid var(--primary);
+      background: rgba(56, 189, 248, 0.05);
+      padding: 0.9rem 1.2rem;
+      border-radius: 0 6px 6px 0;
+      margin-bottom: 1.25rem;
+    }
+
+    .callout.tip {
+      border-left-color: var(--green);
+      background: rgba(34, 197, 94, 0.05);
+    }
+
+    .callout.warn {
+      border-left-color: var(--yellow);
+      background: rgba(234, 179, 8, 0.05);
+    }
+
+    .table-wrapper {
+      overflow-x: auto;
+      margin-bottom: 1.5rem;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+    }
+
+    th, td {
+      padding: 0.75rem 1rem;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+
+    th {
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    td {
+      color: var(--text-muted);
+    }
+
+    /* Footer */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 2rem;
+      text-align: center;
+      color: var(--text-sub);
+      font-size: 0.8rem;
+      background: var(--sidebar-bg);
+    }
+
+    @media (max-width: 900px) {
+      .sidebar {
+        display: none;
+      }
+      .content-area {
+        padding: 2rem 1.5rem;
+      }
+      .search-input {
+        width: 160px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="glow-bg"></div>
+
+  <!-- Header Nav -->
+  <header>
+    <div class="brand-wrap">
+      <a href="index.html" class="brand">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="color: var(--primary);"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>
+        <span>ruid</span>
+        <span class="brand-badge">docs</span>
+      </a>
+    </div>
+    <div class="header-links">
+      <div class="search-input-wrap">
+        <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+        <input type="text" id="doc-search" class="search-input" placeholder="Search documentation…">
+      </div>
+      <a href="index.html" class="btn-nav">← Landing</a>
+      <a href="https://github.com/Theruid/ruidAgent" target="_blank" rel="noopener noreferrer" class="btn-nav">GitHub</a>
+    </div>
+  </header>
+
+  <div class="docs-layout">
+    <!-- Left Navigation Bar -->
+    <aside class="sidebar">
+      <div class="sidebar-group">
+        <div class="sidebar-title">Getting Started</div>
+        <ul class="sidebar-nav">
+          <li><a href="#introduction" class="sidebar-link active">Introduction</a></li>
+          <li><a href="#quick-start" class="sidebar-link">Quick Installation</a></li>
+          <li><a href="#setup-wizard" class="sidebar-link">Provider Setup Wizard</a></li>
+          <li><a href="#architecture" class="sidebar-link">Core Architecture</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-group">
+        <div class="sidebar-title">Provider & Capabilities</div>
+        <ul class="sidebar-nav">
+          <li><a href="#provider-config" class="sidebar-link">Provider Configuration</a></li>
+          <li><a href="#capability-system" class="sidebar-link">Capability-Based Abstraction</a></li>
+          <li><a href="#extended-thinking" class="sidebar-link">Thinking & Reasoning Streams</a></li>
+          <li><a href="#router-models" class="sidebar-link">Router & Proxy Models (9router, OpenRouter)</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-group">
+        <div class="sidebar-title">Agent Operations</div>
+        <ul class="sidebar-nav">
+          <li><a href="#modes-permissions" class="sidebar-link">Modes & Safety Risk Tiers</a></li>
+          <li><a href="#multi-agent-swarms" class="sidebar-link">Subagent Swarms & Fleets</a></li>
+          <li><a href="#worktree-isolation" class="sidebar-link">Git Worktree Isolation</a></li>
+          <li><a href="#snapshot-rollback" class="sidebar-link">Snapshots & Rollbacks</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-group">
+        <div class="sidebar-title">Interface & Tools</div>
+        <ul class="sidebar-nav">
+          <li><a href="#slash-commands" class="sidebar-link">Commands & Keybindings</a></li>
+          <li><a href="#tool-catalog" class="sidebar-link">Built-in Tool Catalog</a></li>
+          <li><a href="#mcp-extensibility" class="sidebar-link">Model Context Protocol (MCP)</a></li>
+          <li><a href="#session-management" class="sidebar-link">Session Search & Persistence</a></li>
+        </ul>
+      </div>
+    </aside>
+
+    <!-- Main Content Body -->
+    <main class="content-area">
+      <section id="introduction">
+        <h1>ruid Documentation</h1>
+        <p class="lead-text">
+          <strong>ruid</strong> (<code>@theruid/ruid</code>) is an autonomous, model-agnostic terminal coding agent designed for cross-platform software engineering.
+        </p>
+
+        <div class="callout tip">
+          <strong>Zero Vendor Lock-in:</strong> ruid natively interfaces with Anthropic, OpenAI, DeepSeek, Google Gemini, Groq, OpenRouter, local Ollama, LM Studio, or any OpenAI-compatible proxy with dynamic capability detection.
+        </div>
+      </section>
+
+      <section id="quick-start">
+        <h2>Quick Installation</h2>
+        <p>Install ruid globally via npm or run directly with npx:</p>
+        <pre><code># Global installation (recommended)
+npm install -g @theruid/ruid
+
+# Run interactive coding agent
+ruid
+
+# Run provider configuration wizard
+ruid setup</code></pre>
+      </section>
+
+      <section id="setup-wizard">
+        <h2>Provider Setup Wizard</h2>
+        <p>Run <code>ruid setup</code> to enter the interactive terminal wizard. The wizard tests network latency, validates API keys, fetches live models, and saves configuration directly to <code>~/.ruid/config.json</code>.</p>
+      </section>
+
+      <section id="architecture">
+        <h2>Core Architecture</h2>
+        <p>The agent is constructed from decoupled modular systems:</p>
+        <ul>
+          <li><strong>Capability-Based Provider Abstraction:</strong> Queries model support for tool calling, thinking/reasoning, structured output, prompt caching, and context limits before dispatching requests.</li>
+          <li><strong>Autonomous Agent Loop:</strong> Manages token budgeting, two-phase history compaction, permission prompt interceptors, and tool executions.</li>
+          <li><strong>Permission Engine (Risk Tiers 0–4):</strong> Defends system boundaries by isolating sensitive credential files (<code>.env</code>, <code>id_rsa</code>) and requiring user confirmation for destructive actions.</li>
+          <li><strong>Ink-Powered Fullscreen TUI:</strong> Renders live response streaming, elapsed thought counters, tool result badges, interactive diffs, and task execution boards.</li>
+        </ul>
+      </section>
+
+      <section id="provider-config">
+        <h2>Provider Configuration (<code>~/.ruid/config.json</code>)</h2>
+        <p>All provider endpoints and models are managed in <code>~/.ruid/config.json</code>:</p>
+        <pre><code>{
+  "providers": {
+    "anthropic": {
+      "type": "anthropic",
+      "apiKeyEnv": "ANTHROPIC_API_KEY",
+      "defaultModel": "claude-sonnet-5"
+    },
+    "openai": {
+      "type": "openai",
+      "baseUrl": "https://api.openai.com/v1",
+      "apiKeyEnv": "OPENAI_API_KEY",
+      "defaultModel": "gpt-4o"
+    },
+    "9router": {
+      "type": "openai",
+      "baseUrl": "http://localhost:20128/v1",
+      "apiKey": "sk-your-key",
+      "defaultModel": "ag/gemini-3.7-flash-high"
+    }
+  },
+  "default": {
+    "provider": "9router",
+    "model": "ag/gemini-3.7-flash-high"
+  }
+}</code></pre>
+      </section>
+
+      <section id="capability-system">
+        <h2>Capability-Based Abstraction</h2>
+        <p>Rather than treating all models as basic text generators, ruid queries <code>ModelCapabilities</code> to tailor request payloads and parsing:</p>
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>Capability Flag</th>
+                <th>Anthropic (Claude 3.7 / Sonnet 5)</th>
+                <th>OpenAI Reasoning (o1 / o3-mini)</th>
+                <th>DeepSeek (R1)</th>
+                <th>Gemini Thinking (2.0 / 3.7)</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>supportsTools</code></td>
+                <td>true</td>
+                <td>true</td>
+                <td>false (text focus)</td>
+                <td>true</td>
+              </tr>
+              <tr>
+                <td><code>supportsThinking</code></td>
+                <td>true</td>
+                <td>true</td>
+                <td>true</td>
+                <td>true</td>
+              </tr>
+              <tr>
+                <td><code>supportsStructuredOutput</code></td>
+                <td>true (tool constraint)</td>
+                <td>true (json_schema)</td>
+                <td>false (prompt fallback)</td>
+                <td>true</td>
+              </tr>
+              <tr>
+                <td><code>contextWindow</code></td>
+                <td>200,000</td>
+                <td>200,000</td>
+                <td>64,000</td>
+                <td>1,000,000</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="extended-thinking">
+        <h2>Thinking & Reasoning Streams</h2>
+        <p>When reasoning models generate thought tokens (via Anthropic <code>thinking_delta</code>, DeepSeek <code>reasoning_content</code>, or OpenAI/Router <code>reasoning</code>):</p>
+        <ul>
+          <li><strong>Live Streaming:</strong> Displays an animated <code>● thinking… (3.2s)</code> counter.</li>
+          <li><strong>Post-Turn Summary:</strong> Collapses into a minimal <code>● thought for 3.2s</code> badge.</li>
+          <li><strong>Dynamic Toggle:</strong> Toggle reasoning dynamically during any turn using <code>/think</code>.</li>
+        </ul>
+      </section>
+
+      <section id="modes-permissions">
+        <h2>Modes & Safety Risk Tiers</h2>
+        <p>Press <kbd>Tab</kbd> or use <code>/mode</code> to cycle operational modes:</p>
+        <ul>
+          <li><strong>[CODE] Mode:</strong> Default interactive mode. Asks before writing files or running mutating shell commands.</li>
+          <li><strong>[PLAN] Mode:</strong> Architectural exploration. All mutation and destructive tools are blocked; read-only research is auto-approved.</li>
+          <li><strong>[AUTO] Mode:</strong> Autonomous execution. Auto-approves safe and file mutation tools, but isolates sensitive Tier 4 credentials.</li>
+        </ul>
+      </section>
+
+      <section id="slash-commands">
+        <h2>Commands & Keybindings</h2>
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>Command / Key</th>
+                <th>Function</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>/think</code></td>
+                <td>Toggle extended thinking/reasoning ON or OFF</td>
+              </tr>
+              <tr>
+                <td><code>/mode &lt;code|plan|auto&gt;</code></td>
+                <td>Switch operational permission mode</td>
+              </tr>
+              <tr>
+                <td><code>/model [id]</code></td>
+                <td>Open interactive model picker with capability badges</td>
+              </tr>
+              <tr>
+                <td><code>/providers</code></td>
+                <td>Open configured provider selector</td>
+              </tr>
+              <tr>
+                <td><code>/tasks</code></td>
+                <td>Display active task execution checklist</td>
+              </tr>
+              <tr>
+                <td><code>/rollback [turn]</code></td>
+                <td>Revert all filesystem changes made in a specific turn</td>
+              </tr>
+              <tr>
+                <td><code>/sessions</code></td>
+                <td>Search and resume previous conversation sessions</td>
+              </tr>
+              <tr>
+                <td><kbd>Tab</kbd></td>
+                <td>Cycle permission mode</td>
+              </tr>
+              <tr>
+                <td><kbd>PageUp</kbd> / <kbd>PageDown</kbd></td>
+                <td>Scroll message history up and down</td>
+              </tr>
+              <tr>
+                <td><kbd>Ctrl+C</kbd></td>
+                <td>Interrupt streaming turn or double-press to exit</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="mcp-extensibility">
+        <h2>Model Context Protocol (MCP)</h2>
+        <p>Integrate custom external tools and data sources by declaring MCP servers in <code>~/.ruid/config.json</code>:</p>
+        <pre><code>"mcpServers": {
+  "context7": {
+    "command": "npx",
+    "args": ["-y", "@upstash/context7-mcp"]
+  }
+}</code></pre>
+        <p>View connected MCP tools in the session by running <code>/mcp</code>.</p>
+      </section>
+    </main>
+  </div>
+
+  <footer>
+    ruid by Theruid · Open source under MIT License · Hosted on GitHub Pages
+  </footer>
+
+  <script>
+    // Search filter for documentation
+    const searchInput = document.getElementById('doc-search');
+    searchInput.addEventListener('input', (e) => {
+      const q = e.target.value.toLowerCase().trim();
+      const sections = document.querySelectorAll('.content-area section');
+      sections.forEach((sec) => {
+        if (!q) {
+          sec.style.display = 'block';
+          return;
+        }
+        const text = sec.innerText.toLowerCase();
+        sec.style.display = text.includes(q) ? 'block' : 'none';
+      });
+    });
+  </script>
+</body>
+</html>
