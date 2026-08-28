@@ -10,6 +10,7 @@ export interface RenderedLine {
   kind:
     | "user-header"
     | "user-body"
+    | "thought-body"
     | "assistant-header"
     | "assistant-body"
     | "tool-pending"
@@ -17,6 +18,7 @@ export interface RenderedLine {
     | "tool-error"
     | "tool-error-detail"
     | "streaming-header"
+    | "streaming-thought"
     | "streaming-body"
     | "blank";
   text: string;
@@ -26,6 +28,8 @@ export function compileLines(
   messages: ViewMessage[],
   streamingText: string,
   width: number,
+  streamingThought?: string,
+  streamingThoughtDurationMs?: number,
 ): RenderedLine[] {
   const contentWidth = Math.max(20, width - 4);
   const lines: RenderedLine[] = [];
@@ -44,9 +48,19 @@ export function compileLines(
       }
     } else if (m.kind === "assistant") {
       lines.push({ id: `a-h-${m.id}`, kind: "assistant-header", text: "agent" });
-      const mdLines = renderMarkdown(m.text, contentWidth);
-      for (let j = 0; j < mdLines.length; j++) {
-        lines.push({ id: `a-b-${m.id}-${j}`, kind: "assistant-body", text: mdLines[j].text });
+      if (m.thought) {
+        const durStr = m.thoughtDurationMs ? `for ${formatLatency(m.thoughtDurationMs)}` : "completed";
+        lines.push({
+          id: `a-t-${m.id}`,
+          kind: "thought-body",
+          text: `● thought ${durStr}`,
+        });
+      }
+      if (m.text) {
+        const mdLines = renderMarkdown(m.text, contentWidth);
+        for (let j = 0; j < mdLines.length; j++) {
+          lines.push({ id: `a-b-${m.id}-${j}`, kind: "assistant-body", text: mdLines[j].text });
+        }
       }
     } else if (m.kind === "tool") {
       const toolName = m.toolMeta?.badgeTitle || m.toolName || "tool";
@@ -85,19 +99,39 @@ export function compileLines(
     }
   }
 
-  if (streamingText) {
+  if (streamingThought || streamingText) {
     if (messages.length > 0) {
       lines.push({ id: "sep-streaming", kind: "blank", text: "" });
     }
-    lines.push({ id: "s-h", kind: "streaming-header", text: "agent" });
-    const mdLines = renderMarkdown(streamingText, contentWidth);
-    for (let j = 0; j < mdLines.length; j++) {
-      const isLast = j === mdLines.length - 1;
+    const headerTitle = streamingThought && !streamingText ? "agent (thinking…)" : "agent";
+    lines.push({ id: "s-h", kind: "streaming-header", text: headerTitle });
+
+    if (streamingThought && !streamingText) {
+      const durStr = streamingThoughtDurationMs ? ` (${formatLatency(streamingThoughtDurationMs)})` : "";
       lines.push({
-        id: `s-b-${j}`,
-        kind: "streaming-body",
-        text: mdLines[j].text + (isLast ? " ▌" : ""),
+        id: "s-th-b",
+        kind: "streaming-thought",
+        text: `● thinking…${durStr}`,
       });
+    } else if (streamingThought && streamingText) {
+      const durStr = streamingThoughtDurationMs ? `for ${formatLatency(streamingThoughtDurationMs)}` : "completed";
+      lines.push({
+        id: "s-th-done",
+        kind: "thought-body",
+        text: `● thought ${durStr}`,
+      });
+    }
+
+    if (streamingText) {
+      const mdLines = renderMarkdown(streamingText, contentWidth);
+      for (let j = 0; j < mdLines.length; j++) {
+        const isLast = j === mdLines.length - 1;
+        lines.push({
+          id: `s-b-${j}`,
+          kind: "streaming-body",
+          text: mdLines[j].text + (isLast ? " ▌" : ""),
+        });
+      }
     }
   }
 
@@ -120,6 +154,14 @@ const MessageLine = memo(function MessageLine({ line }: { line: RenderedLine }) 
           <Text>{line.text}</Text>
         </Box>
       );
+    case "thought-body":
+      return (
+        <Box paddingLeft={2}>
+          <Text dimColor>
+            {line.text}
+          </Text>
+        </Box>
+      );
     case "assistant-header":
       return (
         <Box paddingLeft={1}>
@@ -138,6 +180,14 @@ const MessageLine = memo(function MessageLine({ line }: { line: RenderedLine }) 
       return (
         <Box paddingLeft={1}>
           <Text color="cyan" bold>
+            {line.text}
+          </Text>
+        </Box>
+      );
+    case "streaming-thought":
+      return (
+        <Box paddingLeft={2}>
+          <Text color="yellow">
             {line.text}
           </Text>
         </Box>
@@ -185,17 +235,21 @@ const MessageLine = memo(function MessageLine({ line }: { line: RenderedLine }) 
 export function MessageList({
   messages,
   streamingText,
+  streamingThought,
+  streamingThoughtDurationMs,
   viewportHeight,
   scrollOffset,
   columns,
 }: {
   messages: ViewMessage[];
   streamingText: string;
+  streamingThought?: string;
+  streamingThoughtDurationMs?: number;
   viewportHeight: number;
   scrollOffset: number;
   columns: number;
 }) {
-  const allLines = compileLines(messages, streamingText, columns);
+  const allLines = compileLines(messages, streamingText, columns, streamingThought, streamingThoughtDurationMs);
   const totalLines = allLines.length;
 
   const showIndicators = scrollOffset > 0;

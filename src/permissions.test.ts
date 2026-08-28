@@ -90,4 +90,19 @@ describe("Granular Permissions & Safety Risk Tiers", () => {
     await tier4Promise;
     assert.strictEqual(resolved, true);
   });
+
+  it("enforces strict Tier 4 boundary in auto mode for dangerous rm -rf commands", async () => {
+    const perm = createDeferredPermissions(new Set(), "auto");
+
+    let resolved = false;
+    const dangerousCmdPromise = perm.manager.check("bash", { command: "rm -rf /" }).then((res) => {
+      resolved = res;
+      return res;
+    });
+
+    assert.strictEqual(perm.isPending(), true);
+    perm.respond("n");
+    await dangerousCmdPromise;
+    assert.strictEqual(resolved, false);
+  });
 });

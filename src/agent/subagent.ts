@@ -23,14 +23,15 @@ export function buildSubagentSystemPrompt(
   role: SubagentRole,
   workspaceRoot: string,
   platform: string,
-  outputSchema?: Record<string, unknown>
+  outputSchema?: Record<string, unknown>,
+  isNativeStructuredOutput = false
 ): string {
   const baseHeader = `You are a specialized sub-agent [ROLE: ${role.toUpperCase()}] working in ${workspaceRoot} on ${platform}.
 Your mission is to perform a focused task delegated by the main orchestrator agent.
 Be thorough in tool usage, and concise in your final output. Return ONLY the direct findings/results without filler.`;
 
   let schemaInstructions = "";
-  if (outputSchema) {
+  if (outputSchema && !isNativeStructuredOutput) {
     schemaInstructions = `\n\n<structured_output_requirement>
 You MUST return your final result conforming to this JSON Schema:
 ${JSON.stringify(outputSchema, null, 2)}
@@ -93,6 +94,18 @@ export async function runSubagent(opts: SubagentOptions): Promise<string> {
 
   const ws = new Workspace(activeRoot);
   const maxIterations = opts.maxIterations ?? 12;
+  const caps = opts.provider.capabilities
+    ? opts.provider.capabilities(opts.model)
+    : { supportsStructuredOutput: false, supportsThinking: false };
+
+  const isNativeStructured = Boolean(opts.outputSchema && caps.supportsStructuredOutput);
+  const initialSystemPrompt = buildSubagentSystemPrompt(
+    opts.role,
+    ws.root,
+    process.platform,
+    opts.outputSchema,
+    isNativeStructured
+  );
 
   const permissions = createDeferredPermissions(
     new Set([

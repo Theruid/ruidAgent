@@ -13,6 +13,7 @@ export interface TurnSnapshot {
   turn: number;
   timestamp: number;
   files: Map<string, FileSnapshot>;
+  sideEffects: string[];
 }
 
 export class SnapshotManager {
@@ -25,8 +26,17 @@ export class SnapshotManager {
       turn: this.turnCounter++,
       timestamp: Date.now(),
       files: new Map(),
+      sideEffects: [],
     };
     this.history.push(this.currentTurn);
+  }
+
+  /**
+   * Records an unrevertable side-effecting action executed in the current turn (e.g. bash command).
+   */
+  recordSideEffect(description: string): void {
+    if (!this.currentTurn) return;
+    this.currentTurn.sideEffects.push(description);
   }
 
   /**
@@ -59,7 +69,7 @@ export class SnapshotManager {
   /**
    * Reverts changes made in the latest turn or back to a specific turn.
    */
-  rollback(workspaceRoot: string, targetTurn?: number): { restored: string[]; deleted: string[] } {
+  rollback(workspaceRoot: string, targetTurn?: number): { restored: string[]; deleted: string[]; sideEffects: string[] } {
     if (this.history.length === 0) {
       throw new Error("No previous snapshots found to rollback.");
     }
@@ -89,7 +99,7 @@ export class SnapshotManager {
       }
     }
 
-    return { restored, deleted };
+    return { restored, deleted, sideEffects: [...turnToRevert.sideEffects] };
   }
 
   listCheckpoints(): Array<{ turn: number; time: string; files: string[] }> {
@@ -117,10 +127,13 @@ export function rollbackTool(ws: Workspace, snapshots: SnapshotManager) {
     }),
     async execute(args: { turn?: number }): Promise<string> {
       try {
-        const { restored, deleted } = snapshots.rollback(ws.root, args.turn);
+        const { restored, deleted, sideEffects } = snapshots.rollback(ws.root, args.turn);
         const parts: string[] = [];
         if (restored.length > 0) parts.push(`Restored original: ${restored.join(", ")}`);
         if (deleted.length > 0) parts.push(`Removed newly created: ${deleted.join(", ")}`);
+        if (sideEffects.length > 0) {
+          parts.push(`Note: The following side-effecting commands were run during this turn and cannot be automatically reverted:\n${sideEffects.map((s) => `  - ${s}`).join("\n")}`);
+        }
         if (parts.length === 0) return "No files were modified in that turn.";
         return `Rollback completed successfully.\n${parts.join("\n")}`;
       } catch (err: any) {

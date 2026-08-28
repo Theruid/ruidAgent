@@ -65,12 +65,47 @@ export interface Usage {
   cacheReadInputTokens?: number;
 }
 
+export interface ModelCapabilities {
+  supportsTools: boolean;
+  supportsStreaming: boolean;
+  supportsThinking: boolean;
+  supportsStructuredOutput: boolean;
+  supportsPromptCaching: boolean;
+  contextWindow: number;
+  maxOutputTokens: number;
+  defaultTemperature?: number;
+  supportsReasoningEffort?: boolean;
+}
+
+export interface ThinkingConfig {
+  type: "enabled" | "disabled";
+  budgetTokens?: number;
+  reasoningEffort?: "low" | "medium" | "high";
+}
+
+export type ResponseFormat =
+  | { type: "text" }
+  | { type: "json_object" }
+  | {
+      type: "json_schema";
+      jsonSchema: {
+        name?: string;
+        description?: string;
+        schema: Record<string, unknown>;
+        strict?: boolean;
+      };
+    };
+
 export interface CompletionRequest {
   system: string | SystemPromptBlock[];
   messages: LLMMessage[];
   tools: ToolDef[];
   signal?: AbortSignal;
   model: string;
+  temperature?: number;
+  maxTokens?: number;
+  thinking?: ThinkingConfig;
+  responseFormat?: ResponseFormat;
 }
 
 export interface ProviderConfig {
@@ -81,11 +116,13 @@ export interface ProviderConfig {
   headers?: Record<string, string>;
   defaultModel?: string;
   models?: string[];
+  capabilities?: Partial<ModelCapabilities>;
 }
 
 export interface LLMProvider {
   readonly name: string;
   readonly config: ProviderConfig;
+  capabilities(model?: string): ModelCapabilities;
   complete(req: CompletionRequest): AsyncIterable<StreamEvent>;
 }
 

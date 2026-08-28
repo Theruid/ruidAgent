@@ -176,6 +176,8 @@ export function App({
           <MessageList
             messages={state.messages}
             streamingText={state.streamingText}
+            streamingThought={state.streamingThought}
+            streamingThoughtDurationMs={state.streamingThoughtDurationMs}
             viewportHeight={viewportHeight}
             scrollOffset={state.scrollOffset}
             columns={columns}
@@ -240,6 +242,8 @@ export function App({
         providerName={state.providerName}
         model={state.model}
         connected={state.connected}
+        capabilities={state.capabilities}
+        thinkingEnabled={state.thinkingEnabled}
         msgCount={state.turnCount}
         running={state.phase === "running"}
         mode={state.mode}

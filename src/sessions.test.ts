@@ -1,5 +1,8 @@
-import { describe, it } from "node:test";
+import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert";
+import { mkdtempSync, rmSync, existsSync, writeFileSync, mkdirSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import {
   CURRENT_SESSION_SCHEMA_VERSION,
   migrateSession,
@@ -13,6 +16,21 @@ import {
 import type { LLMMessage } from "./providers/types.js";
 
 describe("Session Schema & Migrations", () => {
+  let tempDir: string;
+
+  beforeEach(() => {
+    tempDir = mkdtempSync(join(tmpdir(), "ruid-sessions-test-"));
+    process.env.RUID_CONFIG_DIR = tempDir;
+  });
+
+  afterEach(() => {
+    delete process.env.RUID_CONFIG_DIR;
+    try {
+      if (existsSync(tempDir)) {
+        rmSync(tempDir, { recursive: true, force: true });
+      }
+    } catch {}
+  });
   it("generates formatted session ids", () => {
     const id = newSessionId();
     assert.match(id, /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-[a-z0-9]+$/);
@@ -64,12 +82,23 @@ describe("Session Schema & Migrations", () => {
             },
           ],
         },
+        {
+          role: "user",
+          content: [
+            {
+              type: "tool_result",
+              toolCallId: "call_1",
+              content: '{"name":"ruid"}',
+              isError: false,
+            },
+          ],
+        },
       ],
     };
 
     const migrated = migrateSession(v2Raw);
     assert.strictEqual(migrated.schemaVersion, 2);
-    assert.strictEqual(migrated.messages.length, 2);
+    assert.strictEqual(migrated.messages.length, 3);
     assert.strictEqual(migrated.messages[1].content[0].type, "tool_call");
   });
 
@@ -128,4 +157,63 @@ describe("Session Schema & Migrations", () => {
 
     deleteSession(testId);
   });
+
+  it("recovers gracefully from mid-execution process termination and dangling tool calls", () => {
+    const crashedSessionRaw = {
+      schemaVersion: 2,
+      id: "crashed-session-001",
+      title: "Interrupted Task",
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      providerName: "openai",
+      model: "gpt-4o",
+      messages: [
+        { role: "user", content: [{ type: "text", text: "Run tool and crash" }] },
+        {
+          role: "assistant",
+          content: [
+            {
+              type: "tool_call",
+              id: "call_hanging_1",
+              name: "write_file",
+              input: { path: "data.txt", content: "some data" },
+            },
+          ],
+        },
+      ],
+    };
+
+    const recovered = migrateSession(crashedSessionRaw);
+    assert.strictEqual(recovered.messages.length, 3);
+    const recoveryMsg = recovered.messages[2];
+    assert.strictEqual(recoveryMsg.role, "user");
+    assert.strictEqual(recoveryMsg.content[0].type, "tool_result");
+    if (recoveryMsg.content[0].type === "tool_result") {
+      assert.strictEqual(recoveryMsg.content[0].toolCallId, "call_hanging_1");
+      assert.strictEqual(recoveryMsg.content[0].isError, true);
+      assert(recoveryMsg.content[0].content.includes("terminated unexpectedly"));
+    }
+  });
+
+  it("handles corrupted json files in listSessions without throwing", () => {
+    const configDir = process.env.RUID_CONFIG_DIR!;
+    const sessionsPath = join(configDir, "sessions");
+    mkdirSync(sessionsPath, { recursive: true });
+    writeFileSync(join(sessionsPath, "corrupted.json"), "{ invalid json syntax !!", "utf8");
+
+    const validId = "valid-session-123";
+    saveSession({
+      id: validId,
+      title: "Valid Session",
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      providerName: "anthropic",
+      model: "claude-sonnet-5",
+      messages: [],
+    });
+
+    const sessions = searchSessions("");
+    assert(sessions.some((s) => s.id === validId));
+  });
 });
+

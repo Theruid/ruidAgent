@@ -28,6 +28,7 @@ export interface LoopOptions {
   signal?: AbortSignal;
   onEvent?: (event: LoopEvent) => void;
   maxContextTokens?: number;
+  thinkingEnabled?: boolean;
   taskStore?: TaskStore;
   snapshots?: SnapshotManager;
   processManager?: ProcessManager;
@@ -52,32 +53,12 @@ export type LoopEvent =
   | { type: "iteration"; count: number }
   | { type: "tasks_updated"; tasks: AgentTask[] };
 
-export type FailureClassification = "transient" | "permanent" | "stale_state";
-
-const STALE_STATE_SIGNATURES = [
-  /old_string not found/i,
-  /resource changed since last read/i,
-  /conflicting version/i,
-  /file modified concurrently/i,
-  /target text does not match/i,
-];
-
-export function classifyToolFailure(errorMessage: string): FailureClassification {
-  for (const sig of STALE_STATE_SIGNATURES) {
-    if (sig.test(errorMessage)) {
-      return "stale_state";
-    }
-  }
-  return "transient";
-}
-
-interface StaleStateTrack {
-  toolName: string;
-  inputJson: string;
-  targetPath?: string;
-  forcedReadDone: boolean;
-  retriedOnce: boolean;
-}
+import {
+  type FailureClassification,
+  classifyToolFailure,
+  type StaleStateTrack,
+} from "./staleState.js";
+export { type FailureClassification, classifyToolFailure, type StaleStateTrack } from "./staleState.js";
 
 // Runs the agentic loop to completion and returns the full message history
 // so the REPL can continue the conversation across turns.
@@ -88,17 +69,16 @@ export async function runAgentLoop(options: LoopOptions): Promise<LLMMessage[]> 
   const processManager = options.processManager ?? new ProcessManager();
   snapshots.beginTurn();
 
-  const registry = await buildRegistry(
-    ws,
+  const registry = await buildRegistry({
+    workspace: ws,
     taskStore,
     snapshots,
-    options.provider,
-    options.model,
-    options.signal,
+    provider: options.provider,
+    model: options.model,
+    signal: options.signal,
     processManager,
-    undefined,
-    options.mcpClients ?? []
-  );
+    mcpClients: options.mcpClients ?? [],
+  });
 
   const permissions =
     options.permissions ??
@@ -121,8 +101,13 @@ export async function runAgentLoop(options: LoopOptions): Promise<LLMMessage[]> 
       ])
     ).manager;
 
+  const caps = options.provider.capabilities
+    ? options.provider.capabilities(options.model)
+    : { contextWindow: 128_000, supportsThinking: false, supportsTools: true };
+
   const maxIterations = options.maxIterations ?? 40;
-  const maxContextTokens = options.maxContextTokens ?? 80_000;
+  const maxContextTokens =
+    options.maxContextTokens ?? Math.min(Math.floor(caps.contextWindow * 0.75), 100_000);
 
   let messages: LLMMessage[] = [...(options.messages ?? [])];
   if (options.initialPrompt) {
@@ -149,12 +134,15 @@ export async function runAgentLoop(options: LoopOptions): Promise<LLMMessage[]> 
       messages = await semanticSummarizeHistory(messages, options.provider, options.model, 4, options.signal);
     }
 
+    const shouldThink = options.thinkingEnabled !== false && caps.supportsThinking;
+
     const req: CompletionRequest = {
       system: systemBlocks,
       messages,
       tools: toToolDefs(registry),
       model: options.model,
       signal: options.signal,
+      thinking: shouldThink ? { type: "enabled", budgetTokens: 2048 } : { type: "disabled" },
     };
 
     // Accumulate the turn's content while streaming so the exact same blocks
@@ -282,6 +270,10 @@ export async function runAgentLoop(options: LoopOptions): Promise<LLMMessage[]> 
         }
 
         options.onEvent?.({ type: "tool_start", name: call.name, input: call.input });
+        if (call.name === "bash") {
+          const cmd = (call.input as any)?.command;
+          if (cmd) snapshots.recordSideEffect(`bash: ${cmd}`);
+        }
         const result = await dispatch(registry, call.name, call.input);
 
         // Classify tool result
@@ -330,7 +322,11 @@ export async function runAgentLoop(options: LoopOptions): Promise<LLMMessage[]> 
                       resultSummary: `Forced re-read for stale state on ${targetPath}`,
                     });
                   }
-                } catch {}
+                } catch (e) {
+                  if (process.env.DEBUG) {
+                    console.error(`[loop debug] Failed forced re-read of ${targetPath}:`, e);
+                  }
+                }
               }
 
               result.content = `${result.content}${freshReadPrompt}`;

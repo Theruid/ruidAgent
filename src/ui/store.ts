@@ -1,5 +1,5 @@
 import type { LoopEvent } from "../agent/loop.js";
-import type { LLMMessage } from "../providers/types.js";
+import type { LLMMessage, ModelCapabilities } from "../providers/types.js";
 import type { AgentMode } from "../permissions.js";
 import type { AgentTask } from "../tools/tasks.js";
 import { calculateCost } from "./utils/pricing.js";
@@ -20,6 +20,8 @@ export interface ViewMessage {
   id: number;
   kind: "user" | "assistant" | "tool";
   text: string;
+  thought?: string;
+  thoughtDurationMs?: number;
   toolName?: string;
   toolError?: boolean;
   /** Tool row still awaiting its result — shows a spinner. */
@@ -47,8 +49,12 @@ export interface UIState {
   providerName: string;
   model: string;
   connected: boolean;
+  capabilities?: ModelCapabilities;
+  thinkingEnabled: boolean;
   messages: ViewMessage[];
   streamingText: string;
+  streamingThought: string;
+  streamingThoughtDurationMs?: number;
   inputDraft: string;
   notice: string | null;
   pendingPermission: PendingPermission | null;
@@ -86,20 +92,33 @@ export class AgentUIStore {
       : null;
   }
 
-  // text deltas accumulate here between coalesced flushes
+  // text and thought deltas accumulate here between coalesced flushes
   private streamBuf = "";
+  private thoughtBuf = "";
+  private thoughtStartTime: number | null = null;
+  private thoughtDurationMs: number | null = null;
   private nextId = 1;
   private toolStartTimes = new Map<string, number>();
 
-  constructor(providerName: string, model: string, connected: boolean, initialMode: AgentMode = "code") {
+  constructor(
+    providerName: string,
+    model: string,
+    connected: boolean,
+    initialMode: AgentMode = "code",
+    capabilities?: ModelCapabilities
+  ) {
     this.state = {
       phase: "idle",
       mode: initialMode,
       providerName,
       model,
       connected,
+      capabilities,
+      thinkingEnabled: capabilities?.supportsThinking ?? true,
       messages: [],
       streamingText: "",
+      streamingThought: "",
+      streamingThoughtDurationMs: undefined,
       inputDraft: "",
       notice: null,
       pendingPermission: null,
@@ -200,8 +219,14 @@ export class AgentUIStore {
     }
   }
 
-  setConnection(providerName: string, model: string, connected: boolean): void {
-    this.set({ providerName, model, connected }, true);
+  setConnection(providerName: string, model: string, connected: boolean, capabilities?: ModelCapabilities): void {
+    this.set({ providerName, model, connected, capabilities }, true);
+  }
+
+  toggleThinking(): boolean {
+    const next = !this.state.thinkingEnabled;
+    this.set({ thinkingEnabled: next }, true);
+    return next;
   }
 
   setNotice(notice: string | null): void {
@@ -214,15 +239,21 @@ export class AgentUIStore {
 
   clearChat(): void {
     this.nextId = 1;
-    this.set({ messages: [], streamingText: "", turnCount: 0, scrollOffset: 0 }, true);
+    this.thoughtStartTime = null;
+    this.thoughtDurationMs = null;
+    this.set({ messages: [], streamingText: "", streamingThought: "", streamingThoughtDurationMs: undefined, turnCount: 0, scrollOffset: 0 }, true);
   }
 
   loadMessages(messages: ViewMessage[]): void {
     this.nextId = messages.reduce((m, x) => Math.max(m, x.id + 1), 1);
+    this.thoughtStartTime = null;
+    this.thoughtDurationMs = null;
     this.set(
       {
         messages,
         streamingText: "",
+        streamingThought: "",
+        streamingThoughtDurationMs: undefined,
         turnCount: messages.filter((m) => m.kind !== "tool").length,
         scrollOffset: 0,
       },
@@ -234,7 +265,10 @@ export class AgentUIStore {
 
   beginTurn(): void {
     this.streamBuf = "";
-    this.set({ phase: "running", streamingText: "", notice: null, scrollOffset: 0 }, true);
+    this.thoughtBuf = "";
+    this.thoughtStartTime = null;
+    this.thoughtDurationMs = null;
+    this.set({ phase: "running", streamingText: "", streamingThought: "", streamingThoughtDurationMs: undefined, notice: null, scrollOffset: 0 }, true);
   }
 
   addUserMessage(text: string): void {
@@ -248,12 +282,22 @@ export class AgentUIStore {
   applyLoopEvent(e: LoopEvent): void {
     switch (e.type) {
       case "text_delta":
+        if (this.thoughtStartTime && this.thoughtDurationMs === null) {
+          this.thoughtDurationMs = Date.now() - this.thoughtStartTime;
+        }
         this.streamBuf += e.text;
-        this.set({ streamingText: this.streamBuf }, true);
+        this.set({ streamingText: this.streamBuf, streamingThoughtDurationMs: this.thoughtDurationMs ?? undefined }, true);
         break;
 
       case "thought_delta":
-        // Show brief thinking notice without corrupting main text
+        if (!this.thoughtStartTime) {
+          this.thoughtStartTime = Date.now();
+        }
+        this.thoughtBuf += e.text;
+        this.set({
+          streamingThought: this.thoughtBuf,
+          streamingThoughtDurationMs: Date.now() - this.thoughtStartTime,
+        }, true);
         break;
 
       case "tool_start": {
@@ -374,13 +418,29 @@ export class AgentUIStore {
 
   private commitStreamRow(patch: Partial<UIState>): void {
     const text = this.streamBuf.trim();
-    if (text) {
-      const msg: ViewMessage = { id: this.nextId++, kind: "assistant", text };
+    const thought = this.thoughtBuf.trim() || undefined;
+    const duration =
+      this.thoughtDurationMs ??
+      (this.thoughtStartTime ? Date.now() - this.thoughtStartTime : undefined);
+
+    if (text || thought) {
+      const msg: ViewMessage = {
+        id: this.nextId++,
+        kind: "assistant",
+        text: text || "",
+        thought,
+        thoughtDurationMs: duration,
+      };
       patch.messages = [...(patch.messages ?? this.state.messages), msg];
       patch.turnCount = this.state.turnCount + 1;
     }
     this.streamBuf = "";
+    this.thoughtBuf = "";
+    this.thoughtStartTime = null;
+    this.thoughtDurationMs = null;
     patch.streamingText = "";
+    patch.streamingThought = "";
+    patch.streamingThoughtDurationMs = undefined;
     this.set(patch, true);
   }
 
@@ -401,9 +461,10 @@ export class AgentUIStore {
       phase: "idle",
       pendingPermission: null,
       streamingText: "",
+      streamingThought: "",
       messages: cleanedMessages,
     };
-    if (this.streamBuf.trim()) {
+    if (this.streamBuf.trim() || this.thoughtBuf.trim()) {
       this.commitStreamRow(patch);
     }
     if (error) patch.notice = error;

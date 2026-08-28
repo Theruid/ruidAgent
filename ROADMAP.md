@@ -54,7 +54,7 @@ This document tracks the current development status, completed milestones, and u
 - [x] **Model Context Protocol (MCP) Client**: Full JSON-RPC 2.0 client supporting stdio and SSE transports with default untrusted security boundaries.
 - [x] **Web Search & Live Documentation Fetcher**: Built-in zero-config `web_search` and HTML-to-Markdown `web_fetch` documentation scraper.
 - [x] **Interactive Terminal Hang Detection & Process Guard**: Non-interactive headless environment injection (Node/npm, Git, Pip, Python, Apt), rolling buffer prompt hang detector, 400ms quiet confirmation, and cross-platform process tree termination.
-- [x] **Comprehensive Automated Test Suite**: 11 test suites covering all core modules with 45+ passing tests.
+- [x] **Comprehensive Automated Test Suite**: 19 test suites covering all core modules with 75+ passing tests and zero home-directory side effects.
 
 ### Developer Experience & TUI
 - [x] **Operating Modes**: `[CODE]` (safe default), `[PLAN]` (read-only architecture), `[AUTO]` (autonomous bypass) with `Tab` cycling.

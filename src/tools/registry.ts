@@ -20,17 +20,60 @@ export interface AgentTool {
   requiresPermission: boolean;
 }
 
+export interface BuildRegistryOptions {
+  workspace: Workspace;
+  taskStore?: TaskStore;
+  snapshots?: SnapshotManager;
+  provider?: LLMProvider;
+  model?: string;
+  signal?: AbortSignal;
+  processManager?: ProcessManager;
+  onBashChunk?: (chunk: string, stream: "stdout" | "stderr") => void;
+  mcpClients?: MCPClient[];
+}
+
 export async function buildRegistry(
-  ws: Workspace,
-  taskStore = new TaskStore(),
-  snapshots = new SnapshotManager(),
-  provider?: LLMProvider,
-  model?: string,
-  signal?: AbortSignal,
-  processManager = new ProcessManager(),
-  onBashChunk?: (chunk: string, stream: "stdout" | "stderr") => void,
-  mcpClients: MCPClient[] = []
+  optionsOrWs: Workspace | BuildRegistryOptions,
+  taskStoreArg = new TaskStore(),
+  snapshotsArg = new SnapshotManager(),
+  providerArg?: LLMProvider,
+  modelArg?: string,
+  signalArg?: AbortSignal,
+  processManagerArg = new ProcessManager(),
+  onBashChunkArg?: (chunk: string, stream: "stdout" | "stderr") => void,
+  mcpClientsArg: MCPClient[] = []
 ): Promise<Map<string, AgentTool>> {
+  let ws: Workspace;
+  let taskStore: TaskStore;
+  let snapshots: SnapshotManager;
+  let provider: LLMProvider | undefined;
+  let model: string | undefined;
+  let signal: AbortSignal | undefined;
+  let processManager: ProcessManager;
+  let onBashChunk: ((chunk: string, stream: "stdout" | "stderr") => void) | undefined;
+  let mcpClients: MCPClient[];
+
+  if ("workspace" in optionsOrWs) {
+    ws = optionsOrWs.workspace;
+    taskStore = optionsOrWs.taskStore ?? new TaskStore();
+    snapshots = optionsOrWs.snapshots ?? new SnapshotManager();
+    provider = optionsOrWs.provider;
+    model = optionsOrWs.model;
+    signal = optionsOrWs.signal;
+    processManager = optionsOrWs.processManager ?? new ProcessManager();
+    onBashChunk = optionsOrWs.onBashChunk;
+    mcpClients = optionsOrWs.mcpClients ?? [];
+  } else {
+    ws = optionsOrWs;
+    taskStore = taskStoreArg;
+    snapshots = snapshotsArg;
+    provider = providerArg;
+    model = modelArg;
+    signal = signalArg;
+    processManager = processManagerArg;
+    onBashChunk = onBashChunkArg;
+    mcpClients = mcpClientsArg;
+  }
   const tools: AgentTool[] = [
     { ...readFileTool(ws), requiresPermission: false },
     { ...listDirTool(ws), requiresPermission: false },

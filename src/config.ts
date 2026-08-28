@@ -23,8 +23,16 @@ export interface AppConfig {
   maxIterations?: number;
 }
 
-const CONFIG_DIR = join(homedir(), ".ruid");
-const CONFIG_PATH = join(CONFIG_DIR, "config.json");
+export function getConfigDir(): string {
+  return process.env.RUID_CONFIG_DIR || join(homedir(), ".ruid");
+}
+
+export function getConfigPath(): string {
+  return join(getConfigDir(), "config.json");
+}
+
+export const CONFIG_DIR = join(homedir(), ".ruid");
+export const CONFIG_PATH = join(CONFIG_DIR, "config.json");
 
 export const DEFAULT_CONFIG: AppConfig = {
   providers: {
@@ -50,7 +58,7 @@ export const DEFAULT_CONFIG: AppConfig = {
     },
     deepseek: {
       type: "openai",
-      baseUrl: "https://deepseek.com",
+      baseUrl: "https://api.deepseek.com",
       apiKeyEnv: "DEEPSEEK_API_KEY",
       defaultModel: "deepseek-chat",
       models: ["deepseek-chat", "deepseek-reasoner"],
@@ -60,7 +68,7 @@ export const DEFAULT_CONFIG: AppConfig = {
       baseUrl: "https://api.groq.com/openai/v1",
       apiKeyEnv: "GROQ_API_KEY",
       defaultModel: "llama-3.3-70b-versatile",
-      models: ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768"],
+      models: ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"],
     },
     openrouter: {
       type: "openai",
@@ -84,11 +92,12 @@ export const DEFAULT_CONFIG: AppConfig = {
 
 export function loadConfig(overrides?: Partial<AppConfig>): AppConfig {
   let fileConfig: Partial<AppConfig> = {};
-  if (existsSync(CONFIG_PATH)) {
+  const configPath = getConfigPath();
+  if (existsSync(configPath)) {
     try {
-      fileConfig = JSON.parse(readFileSync(CONFIG_PATH, "utf8"));
+      fileConfig = JSON.parse(readFileSync(configPath, "utf8"));
     } catch (e) {
-      console.warn(`Warning: could not parse ${CONFIG_PATH}: ${e instanceof Error ? e.message : e}`);
+      console.warn(`Warning: could not parse ${configPath}: ${e instanceof Error ? e.message : e}`);
     }
   }
 
@@ -142,8 +151,9 @@ export function resolveProviderModel(
 }
 
 export function ensureConfigDir(): string {
-  mkdirSync(CONFIG_DIR, { recursive: true });
-  return CONFIG_DIR;
+  const dir = getConfigDir();
+  mkdirSync(dir, { recursive: true });
+  return dir;
 }
 
 // A provider is usable when we can actually authenticate: an inline key, or a

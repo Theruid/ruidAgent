@@ -21,6 +21,19 @@ describe("Subagents & Orchestration Primitives", () => {
     assert.match(prompt, /"findings"/);
   });
 
+  it("omits prompt boilerplate when provider supports native structured output", () => {
+    const prompt = buildSubagentSystemPrompt("explore", "/test/workspace", "linux", {
+      type: "object",
+      properties: {
+        findings: { type: "array", items: { type: "string" } },
+      },
+      required: ["findings"],
+    }, true);
+
+    assert.match(prompt, /ROLE: EXPLORE/);
+    assert.doesNotMatch(prompt, /<structured_output_requirement>/);
+  });
+
   it("executes sequential pipeline chain with mocked provider", async () => {
     const mockProvider: LLMProvider = {
       name: "mock-llm",

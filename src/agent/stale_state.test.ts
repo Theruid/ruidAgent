@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert";
-import { classifyToolFailure } from "./loop.js";
+import { classifyToolFailure } from "./staleState.js";
 
 describe("Stale State Re-Verification & Retry Logic", () => {
   it("classifies old_string not found as stale_state", () => {

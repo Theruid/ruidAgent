@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, writeFileSync, mkdirSync, existsSync, unlinkSync } from "node:fs";
+import { readdirSync, readFileSync, writeFileSync, mkdirSync, existsSync, unlinkSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import type { LLMMessage } from "./providers/types.js";
 import { ensureConfigDir } from "./config.js";
@@ -46,6 +46,24 @@ export function migrateSession(raw: any): StoredSession {
     });
   }
 
+  // Crash Recovery: If last message is an assistant tool_call with no following tool_result,
+  // append synthetic interrupted tool_result to recover clean conversation state
+  const lastMsg = session.messages.at(-1);
+  if (lastMsg?.role === "assistant") {
+    const toolCalls = lastMsg.content.filter((c): c is Extract<typeof c, { type: "tool_call" }> => c.type === "tool_call");
+    if (toolCalls.length > 0) {
+      session.messages.push({
+        role: "user",
+        content: toolCalls.map((tc) => ({
+          type: "tool_result" as const,
+          toolCallId: tc.id,
+          content: "Execution interrupted: process terminated unexpectedly before tool completion.",
+          isError: true,
+        })),
+      });
+    }
+  }
+
   return session;
 }
 
@@ -56,7 +74,10 @@ export function saveSession(sess: Omit<StoredSession, "schemaVersion"> & { schem
     schemaVersion: CURRENT_SESSION_SCHEMA_VERSION,
     updatedAt: Date.now(),
   };
-  writeFileSync(join(sessionsDir(), `${fullSession.id}.json`), JSON.stringify(fullSession, null, 2));
+  const targetFile = join(sessionsDir(), `${fullSession.id}.json`);
+  const tempFile = join(sessionsDir(), `${fullSession.id}.json.tmp`);
+  writeFileSync(tempFile, JSON.stringify(fullSession, null, 2), "utf8");
+  renameSync(tempFile, targetFile);
 }
 
 export function deleteSession(id: string): void {

@@ -1,16 +1,14 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
-import { homedir } from "node:os";
-import { join, dirname } from "node:path";
+import { dirname } from "node:path";
 import { listModels as listOpenAIModels } from "./providers/openai.js";
 import { listModels as listAnthropicModels } from "./providers/anthropic.js";
-import { DEFAULT_CONFIG, type AppConfig } from "./config.js";
+import { DEFAULT_CONFIG, getConfigPath, type AppConfig } from "./config.js";
 import type { ProviderConfig } from "./providers/types.js";
 
-export const CONFIG_PATH = join(homedir(), ".ruid", "config.json");
-
 export function loadConfigFile(): AppConfig {
+  const configPath = getConfigPath();
   try {
-    const raw = JSON.parse(readFileSync(CONFIG_PATH, "utf8"));
+    const raw = JSON.parse(readFileSync(configPath, "utf8"));
     return {
       providers: raw.providers ?? {},
       default: raw.default ?? { provider: "anthropic", model: "" },
@@ -18,14 +16,15 @@ export function loadConfigFile(): AppConfig {
       maxIterations: raw.maxIterations,
     };
   } catch {
-    if (existsSync(CONFIG_PATH)) throw new Error(`Unreadable config at ${CONFIG_PATH}`);
+    if (existsSync(configPath)) throw new Error(`Unreadable config at ${configPath}`);
     return JSON.parse(JSON.stringify(DEFAULT_CONFIG));
   }
 }
 
 export function saveConfigFile(config: AppConfig): void {
-  mkdirSync(dirname(CONFIG_PATH), { recursive: true });
-  writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2) + "\n");
+  const configPath = getConfigPath();
+  mkdirSync(dirname(configPath), { recursive: true });
+  writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n");
 }
 
 export async function fetchModels(

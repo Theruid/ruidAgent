@@ -27,6 +27,7 @@ jobs:
 
       - name: Build and run test suite
         run: |
+          npm run typecheck
           npm run build
           npm test
 

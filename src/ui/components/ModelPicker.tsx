@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Box, Text, useInput } from "ink";
 import { fetchModels } from "../../configWizard.js";
 import type { ProviderConfig } from "../../providers/types.js";
+import { resolveModelCapabilities, formatCapabilityBadge } from "../../providers/capabilities.js";
 
 export function ModelPicker({
   providerName,
@@ -178,16 +179,22 @@ export function ModelPicker({
                 const isSelected = actualIdx === clampedIdx;
                 const isCurrent = m === currentModel;
                 const origIdx = allModels.indexOf(m) + 1;
+                const providerType = providerConfig?.type ?? "openai";
+                const caps = resolveModelCapabilities(providerType, m, providerConfig);
+                const badge = formatCapabilityBadge(caps);
+
                 return (
-                  <Text
-                    key={m}
-                    color={isSelected ? "cyanBright" : isCurrent ? "green" : undefined}
-                    bold={isSelected || isCurrent}
-                  >
-                    {isSelected ? "> " : "  "}
-                    {origIdx > 0 ? `${origIdx}) ` : ""}{m}
-                    {isCurrent ? " (active)" : ""}
-                  </Text>
+                  <Box key={m} justifyContent="space-between">
+                    <Text
+                      color={isSelected ? "cyanBright" : isCurrent ? "green" : undefined}
+                      bold={isSelected || isCurrent}
+                    >
+                      {isSelected ? "> " : "  "}
+                      {origIdx > 0 ? `${origIdx}) ` : ""}{m}
+                      {isCurrent ? " (active)" : ""}
+                    </Text>
+                    <Text dimColor> {badge}</Text>
+                  </Box>
                 );
               })}
               {below > 0 && <Text dimColor> ↓ {below} more model{below > 1 ? "s" : ""} below</Text>}

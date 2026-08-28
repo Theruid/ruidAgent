@@ -2,12 +2,14 @@ import type {
   CompletionRequest,
   LLMMessage,
   LLMProvider,
+  ModelCapabilities,
   ProviderConfig,
   StreamEvent,
   SystemPromptBlock,
 } from "./types.js";
 import { sseDataLines } from "./types.js";
 import { fetchWithRetry } from "./retry.js";
+import { resolveModelCapabilities } from "./capabilities.js";
 
 // Works with any OpenAI-compatible /chat/completions endpoint:
 // OpenAI, DeepSeek, Groq, OpenRouter, Together, Mistral, Ollama (/v1), LM Studio, vLLM.
@@ -68,6 +70,11 @@ export function createOpenAIProvider(config: ProviderConfig): LLMProvider {
     name: "openai-compatible",
     config,
 
+    capabilities(model?: string): ModelCapabilities {
+      const targetModel = model ?? config.defaultModel ?? "gpt-4o";
+      return resolveModelCapabilities("openai", targetModel, config);
+    },
+
     async *complete(req: CompletionRequest): AsyncIterable<StreamEvent> {
       const headers: Record<string, string> = {
         "content-type": "application/json",
@@ -75,9 +82,70 @@ export function createOpenAIProvider(config: ProviderConfig): LLMProvider {
       };
       if (apiKey) headers["authorization"] = `Bearer ${apiKey}`;
 
+      const caps = resolveModelCapabilities("openai", req.model, config);
+
       const systemContent = Array.isArray(req.system)
         ? req.system.map((b: SystemPromptBlock) => b.text).join("\n\n")
         : req.system;
+
+      const bodyPayload: Record<string, unknown> = {
+        model: req.model,
+        stream: true,
+        stream_options: { include_usage: true },
+        messages: [
+          { role: "system", content: systemContent },
+          ...req.messages.map(translateMessage),
+        ],
+      };
+
+      if (req.tools.length > 0) {
+        bodyPayload.tools = req.tools.map((t) => ({
+          type: "function",
+          function: { name: t.name, description: t.description, parameters: t.parameters },
+        }));
+      }
+
+      // Handle structured output format
+      if (req.responseFormat?.type === "json_schema") {
+        bodyPayload.response_format = {
+          type: "json_schema",
+          json_schema: {
+            name: req.responseFormat.jsonSchema.name || "structured_response",
+            description: req.responseFormat.jsonSchema.description,
+            strict: req.responseFormat.jsonSchema.strict ?? true,
+            schema: req.responseFormat.jsonSchema.schema,
+          },
+        };
+      } else if (req.responseFormat?.type === "json_object") {
+        bodyPayload.response_format = { type: "json_object" };
+      }
+
+      // Reasoning models (o1, o3-mini) vs standard models parameter handling
+      if (caps.supportsReasoningEffort) {
+        if (req.thinking?.type === "disabled") {
+          bodyPayload.reasoning_effort = "low";
+        } else if (req.thinking?.reasoningEffort) {
+          bodyPayload.reasoning_effort = req.thinking.reasoningEffort;
+        }
+        if (typeof req.maxTokens === "number") {
+          bodyPayload.max_completion_tokens = req.maxTokens;
+        }
+        // Omit temperature for reasoning models (rejected by OpenAI API)
+      } else {
+        if (req.thinking?.type === "disabled") {
+          // Send explicit disabled reasoning hint to OpenAI/Gemini/OpenRouter proxies
+          bodyPayload.thinking = { type: "disabled", budget_tokens: 0 };
+        } else if (req.thinking?.type === "enabled") {
+          bodyPayload.thinking = { type: "enabled", budget_tokens: req.thinking.budgetTokens ?? 2048 };
+        }
+
+        if (typeof req.temperature === "number") {
+          bodyPayload.temperature = req.temperature;
+        }
+        if (typeof req.maxTokens === "number") {
+          bodyPayload.max_tokens = req.maxTokens;
+        }
+      }
 
       let res: Response;
       try {
@@ -86,21 +154,7 @@ export function createOpenAIProvider(config: ProviderConfig): LLMProvider {
           {
             method: "POST",
             headers,
-            body: JSON.stringify({
-              model: req.model,
-              stream: true,
-              stream_options: { include_usage: true },
-              messages: [
-                { role: "system", content: systemContent },
-                ...req.messages.map(translateMessage),
-              ],
-              ...(req.tools.length > 0 && {
-                tools: req.tools.map((t) => ({
-                  type: "function",
-                  function: { name: t.name, description: t.description, parameters: t.parameters },
-                })),
-              }),
-            }),
+            body: JSON.stringify(bodyPayload),
           },
           { signal: req.signal }
         );
@@ -118,12 +172,13 @@ export function createOpenAIProvider(config: ProviderConfig): LLMProvider {
         return;
       }
 
-      yield* parseStream(res.body);
+      const allowThinking = req.thinking?.type !== "disabled";
+      yield* parseStream(res.body, allowThinking);
     },
   };
 }
 
-function translateMessage(m: LLMMessage): Record<string, unknown> {
+export function translateMessage(m: LLMMessage): Record<string, unknown> {
   if (m.role === "assistant") {
     const text = m.content
       .filter((c): c is Extract<typeof c, { type: "text" }> => c.type === "text")
@@ -167,7 +222,10 @@ function translateMessage(m: LLMMessage): Record<string, unknown> {
   return { role: "user", content: text || "(empty)" };
 }
 
-async function* parseStream(body: ReadableStream<Uint8Array>): AsyncIterable<StreamEvent> {
+export async function* parseStream(
+  body: ReadableStream<Uint8Array>,
+  allowThinking = true
+): AsyncIterable<StreamEvent> {
   let usage: any | undefined;
   let finishReason: string | null = null;
 
@@ -193,12 +251,19 @@ async function* parseStream(body: ReadableStream<Uint8Array>): AsyncIterable<Str
 
     if (!delta) continue;
 
+    // A chunk can carry both reasoning_content and text content (or thought_delta first)
+    if (allowThinking) {
+      if (typeof delta.reasoning_content === "string" && delta.reasoning_content.length > 0) {
+        yield { type: "thought_delta", text: delta.reasoning_content };
+      } else if (typeof delta.reasoning === "string" && delta.reasoning.length > 0) {
+        yield { type: "thought_delta", text: delta.reasoning };
+      } else if (typeof delta.thought === "string" && delta.thought.length > 0) {
+        yield { type: "thought_delta", text: delta.thought };
+      }
+    }
+
     if (typeof delta.content === "string" && delta.content.length > 0) {
       yield { type: "text_delta", text: delta.content };
-    } else if (typeof delta.reasoning_content === "string" && delta.reasoning_content.length > 0) {
-      yield { type: "thought_delta", text: delta.reasoning_content };
-    } else if (typeof delta.reasoning === "string" && delta.reasoning.length > 0) {
-      yield { type: "thought_delta", text: delta.reasoning };
     }
 
     for (const tc of delta.tool_calls ?? []) {

@@ -29,7 +29,9 @@ export function logAudit(record: AuditRecord): void {
     const file = auditLogPath();
     const line = JSON.stringify(record) + "\n";
     appendFileSync(file, line, "utf8");
-  } catch {
-    // Audit logging failure should not crash agent execution
+  } catch (e) {
+    if (process.env.DEBUG) {
+      console.error("[audit log debug] Failed to write audit log entry:", e);
+    }
   }
 }

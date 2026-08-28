@@ -2,6 +2,7 @@ import type {
   CompletionRequest,
   LLMMessage,
   LLMProvider,
+  ModelCapabilities,
   ProviderConfig,
   StreamEvent,
   SystemPromptBlock,
@@ -9,6 +10,7 @@ import type {
 } from "./types.js";
 import { sseDataLines } from "./types.js";
 import { fetchWithRetry } from "./retry.js";
+import { resolveModelCapabilities } from "./capabilities.js";
 
 const ANTHROPIC_DEFAULT_BASE = "https://api.anthropic.com";
 
@@ -16,6 +18,7 @@ export const ANTHROPIC_MODELS: string[] = [
   "claude-sonnet-5",
   "claude-opus-5",
   "claude-haiku-4-5-20251001",
+  "claude-3-7-sonnet-latest",
   "claude-3-5-sonnet-latest",
   "claude-3-5-haiku-latest",
   "claude-3-opus-latest",
@@ -44,8 +47,14 @@ export function createAnthropicProvider(config: ProviderConfig): LLMProvider {
     name: "anthropic",
     config,
 
+    capabilities(model?: string): ModelCapabilities {
+      const targetModel = model ?? config.defaultModel ?? "claude-sonnet-5";
+      return resolveModelCapabilities("anthropic", targetModel, config);
+    },
+
     async *complete(req: CompletionRequest): AsyncIterable<StreamEvent> {
       let res: Response;
+      const caps = resolveModelCapabilities("anthropic", req.model, config);
 
       // Format system prompt as block array with cache control if available
       let systemPayload: any = req.system;
@@ -58,7 +67,7 @@ export function createAnthropicProvider(config: ProviderConfig): LLMProvider {
       }
 
       // Add cache_control to the last tool definition to cache the static tool prefix
-      const toolsPayload = req.tools.map((t, idx) => {
+      const toolsPayload: any[] = req.tools.map((t, idx) => {
         const isLastTool = idx === req.tools.length - 1;
         const cacheControl = t.cacheControl ?? (isLastTool ? { type: "ephemeral" as const } : undefined);
         return {
@@ -69,11 +78,49 @@ export function createAnthropicProvider(config: ProviderConfig): LLMProvider {
         };
       });
 
+      // Handle structured output schema via synthetic tool choice constraint
+      let toolChoicePayload: any = undefined;
+      if (req.responseFormat?.type === "json_schema") {
+        const schemaDef = req.responseFormat.jsonSchema;
+        const toolName = schemaDef.name || "structured_output";
+        toolsPayload.push({
+          name: toolName,
+          description: schemaDef.description || "Output structured JSON matching this schema",
+          input_schema: schemaDef.schema,
+        });
+        toolChoicePayload = { type: "tool", name: toolName };
+      }
+
       // Prepare messages with rolling cache control at stable N-2 index
       const messagesPayload = req.messages.map((m, mIdx) => {
         const isRollingCacheTurn = req.messages.length >= 3 && mIdx === req.messages.length - 2 && m.role === "user";
         return translateMessage(m, isRollingCacheTurn);
       });
+
+      // Configure thinking parameters
+      const thinkingEnabled = caps.supportsThinking && req.thinking?.type === "enabled";
+      const thinkingBudget = thinkingEnabled ? req.thinking?.budgetTokens ?? 2048 : undefined;
+      const maxTokens = req.maxTokens ?? (thinkingBudget ? Math.max(8192, thinkingBudget + 4096) : 8192);
+
+      const requestBody: Record<string, unknown> = {
+        model: req.model,
+        max_tokens: maxTokens,
+        system: systemPayload,
+        messages: messagesPayload,
+        tools: toolsPayload.length > 0 ? toolsPayload : undefined,
+        tool_choice: toolChoicePayload,
+        stream: true,
+      };
+
+      if (thinkingEnabled) {
+        requestBody.thinking = {
+          type: "enabled",
+          budget_tokens: thinkingBudget,
+        };
+        // Anthropic requires temperature to be 1 or omitted when thinking is enabled
+      } else if (typeof req.temperature === "number") {
+        requestBody.temperature = req.temperature;
+      }
 
       try {
         res = await fetchWithRetry(
@@ -87,14 +134,7 @@ export function createAnthropicProvider(config: ProviderConfig): LLMProvider {
               "anthropic-beta": "prompt-caching-2024-07-31",
               ...config.headers,
             },
-            body: JSON.stringify({
-              model: req.model,
-              max_tokens: 8192,
-              system: systemPayload,
-              messages: messagesPayload,
-              tools: toolsPayload.length > 0 ? toolsPayload : undefined,
-              stream: true,
-            }),
+            body: JSON.stringify(requestBody),
           },
           { signal: req.signal }
         );
@@ -112,14 +152,14 @@ export function createAnthropicProvider(config: ProviderConfig): LLMProvider {
         return;
       }
 
-      yield* parseStream(res.body);
+      yield* parseStream(res.body, thinkingEnabled);
     },
   };
 }
 
 // Our canonical shape maps ~1:1 onto Anthropic's wire format; tool_result
 // blocks live inside user messages per the API contract.
-function translateMessage(m: LLMMessage, addCacheControl = false) {
+export function translateMessage(m: LLMMessage, addCacheControl = false) {
   const contentBlocks = m.content.map((c, cIdx) => {
     const isLastBlock = cIdx === m.content.length - 1;
     const cache_control = addCacheControl && isLastBlock ? { type: "ephemeral" as const } : undefined;
@@ -150,7 +190,10 @@ function translateMessage(m: LLMMessage, addCacheControl = false) {
   };
 }
 
-async function* parseStream(body: ReadableStream<Uint8Array>): AsyncIterable<StreamEvent> {
+export async function* parseStream(
+  body: ReadableStream<Uint8Array>,
+  allowThinking = true
+): AsyncIterable<StreamEvent> {
   let usage: Usage | undefined;
   let stopReason: string | null = null;
 
@@ -192,6 +235,8 @@ async function* parseStream(body: ReadableStream<Uint8Array>): AsyncIterable<Str
         const d = evt.delta;
         if (d?.type === "text_delta") {
           yield { type: "text_delta", text: d.text };
+        } else if (allowThinking && d?.type === "thinking_delta" && typeof d.thinking === "string") {
+          yield { type: "thought_delta", text: d.thinking };
         } else if (d?.type === "input_json_delta" && openTool) {
           openTool.json += d.partial_json;
         }

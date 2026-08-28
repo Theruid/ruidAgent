@@ -79,10 +79,13 @@ const AUTO_APPROVE = new Set([
 ]);
 
 export function startTui(options: TuiOptions): void {
+  const initialCaps = options.provider?.capabilities ? options.provider.capabilities(options.model) : undefined;
   const store = new AgentUIStore(
     options.provider?.name ?? "",
     options.model ?? "",
     options.provider !== null && Boolean(options.model),
+    "code",
+    initialCaps
   );
 
   let active: { name: string; provider: LLMProvider } | null = options.provider
@@ -160,7 +163,8 @@ export function startTui(options: TuiOptions): void {
     store.setPhase("idle");
     if (chosenModel) {
       model = chosenModel;
-      store.setConnection(active?.name ?? "", model, active !== null);
+      const caps = active?.provider?.capabilities ? active.provider.capabilities(model) : undefined;
+      store.setConnection(active?.name ?? "", model, active !== null, caps);
       store.setNotice(`Model switched to ${model}`);
     }
   }
@@ -201,9 +205,11 @@ export function startTui(options: TuiOptions): void {
         store.setNotice(`"${resolved.name}" has no API key. Run /setup or export the env var.`);
         return;
       }
-      active = { name: resolved.name, provider: createProvider(resolved.name, resolved.cfg) };
+      const newProvider = createProvider(resolved.name, resolved.cfg);
+      active = { name: resolved.name, provider: newProvider };
       if (resolved.model) model = resolved.model;
-      store.setConnection(resolved.name, model, Boolean(model));
+      const caps = newProvider.capabilities ? newProvider.capabilities(model) : undefined;
+      store.setConnection(resolved.name, model, Boolean(model), caps);
       store.setNotice(`Connected: ${resolved.name}${model ? ` (${model})` : ""}`);
     } catch (e) {
       active = null;
@@ -239,6 +245,7 @@ export function startTui(options: TuiOptions): void {
         workspaceRoot: process.cwd(),
         initialPrompt: resolvedPrompt,
         messages: history,
+        thinkingEnabled: store.getState().thinkingEnabled,
         signal: abortController.signal,
         permissions: permissions.manager,
         taskStore,
@@ -345,6 +352,13 @@ export function startTui(options: TuiOptions): void {
         }
         tryConnect(rest[0]);
         break;
+
+      case "think":
+      case "thinking": {
+        const enabled = store.toggleThinking();
+        store.setNotice(`Thinking ${enabled ? "enabled (ON)" : "disabled (OFF)"}`);
+        break;
+      }
 
       case "clear":
         history = [];

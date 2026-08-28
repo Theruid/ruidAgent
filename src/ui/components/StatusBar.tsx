@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Box, Text } from "ink";
 import type { SessionUsage } from "../store.js";
 import type { AgentMode } from "../../permissions.js";
+import type { ModelCapabilities } from "../../providers/types.js";
 import { formatTokenCount, formatCost, formatLatency } from "../utils/pricing.js";
 
 const SPIN = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏";
@@ -10,6 +11,8 @@ export function StatusBar({
   providerName,
   model,
   connected,
+  capabilities,
+  thinkingEnabled,
   msgCount,
   running,
   mode = "code",
@@ -21,6 +24,8 @@ export function StatusBar({
   providerName: string;
   model: string;
   connected: boolean;
+  capabilities?: ModelCapabilities;
+  thinkingEnabled?: boolean;
   msgCount: number;
   running: boolean;
   mode?: AgentMode;
@@ -53,6 +58,12 @@ export function StatusBar({
     modeLabel = "AUTO";
   }
 
+  const thinkingBadge = capabilities?.supportsThinking
+    ? thinkingEnabled === false
+      ? " · [think:off]"
+      : " · [think]"
+    : "";
+
   return (
     <Box justifyContent="space-between" paddingX={1} marginTop={0}>
       <Box>
@@ -60,7 +71,7 @@ export function StatusBar({
           [{modeLabel}]
         </Text>
         <Text dimColor>
-          {" "}{connected ? `${providerName} · ${model || "(no model)"}` : "not connected — /setup"}
+          {" "}{connected ? `${providerName} · ${model || "(no model)"}${thinkingBadge}` : "not connected — /setup"}
         </Text>
       </Box>
 

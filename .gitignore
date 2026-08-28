@@ -1,4 +1,41 @@
+# Dependencies
 node_modules/
+
+# Build artifacts
 dist/
+
+# Logs and runtime data
 *.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS artifacts
 .DS_Store
+Thumbs.db
+
+# Environment and sensitive keys
+.env
+.env.*
+!.env.example
+
+# IDE and Editor settings
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Temporary and benchmark files
+.claude/
+tmp_test/
+*.tmp
+.ruid/
+benchmark-runner.ts
+eval-report.json
+
+# Coverage reports
+coverage/
+.nyc_output/
+
+
+

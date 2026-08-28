@@ -1,24 +1,30 @@
-import { describe, it, beforeEach } from "node:test";
+import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert";
-import { existsSync, readFileSync, rmSync, mkdirSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, mkdtempSync } from "node:fs";
 import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { logAudit, type AuditRecord } from "./log.js";
 import { ensureConfigDir } from "../config.js";
 
 describe("Audit Logging", () => {
-  const auditFile = join(ensureConfigDir(), "audit.jsonl");
+  let tempDir: string;
 
   beforeEach(() => {
+    tempDir = mkdtempSync(join(tmpdir(), "ruid-audit-test-"));
+    process.env.RUID_CONFIG_DIR = tempDir;
+  });
+
+  afterEach(() => {
+    delete process.env.RUID_CONFIG_DIR;
     try {
-      if (existsSync(auditFile)) {
-        rmSync(auditFile);
+      if (existsSync(tempDir)) {
+        rmSync(tempDir, { recursive: true, force: true });
       }
-    } catch {
-      // ignore
-    }
+    } catch {}
   });
 
   it("appends structured audit record to audit.jsonl", () => {
+    const auditFile = join(ensureConfigDir(), "audit.jsonl");
     const record: AuditRecord = {
       ts: 1700000000000,
       source: "direct",
@@ -44,6 +50,7 @@ describe("Audit Logging", () => {
   });
 
   it("handles multi-record sequential appends", () => {
+    const auditFile = join(ensureConfigDir(), "audit.jsonl");
     logAudit({
       ts: 1700000000001,
       source: "mcp",
