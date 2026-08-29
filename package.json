@@ -1,6 +1,6 @@
 {
   "name": "@theruid/ruid",
-  "version": "0.3.27",
+  "version": "0.3.28",
   "description": "Standalone CLI coding agent — works with any LLM provider",
   "type": "module",
   "main": "dist/index.js",
