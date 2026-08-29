@@ -5,6 +5,11 @@ All notable changes to `@theruid/ruid` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.22] - 2026-08-29
+
+### Changed
+- Enhanced git rollback diff comparison preventing unnecessary write-backs on unmodified pre-turn dirty files.
+
 ## [0.3.21] - 2026-08-29
 
 ### Added
