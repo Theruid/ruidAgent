@@ -18,12 +18,20 @@ export function createProvider(name: string, cfg: ProviderConfig): LLMProvider {
 
 async function main(): Promise<void> {
   const arg = process.argv[2];
+  if (arg === "-v" || arg === "--version" || arg === "-V") {
+    const { getLocalPackageInfo } = await import("./updater.js");
+    const { version } = getLocalPackageInfo();
+    console.log(`ruid v${version}`);
+    return;
+  }
+
   if (arg === "-h" || arg === "--help") {
     console.log(`ruid (@theruid/ruid) — Autonomous terminal coding agent
 
 Usage:
   ruid          Launch interactive coding agent
   ruid setup    Run interactive provider setup wizard
+  ruid --version Show current version
 `);
     return;
   }

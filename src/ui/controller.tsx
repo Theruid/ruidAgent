@@ -22,7 +22,7 @@ import path from "node:path";
 import { TaskStore } from "../tools/tasks.js";
 import { SnapshotManager } from "../tools/snapshot.js";
 import { GitCheckpointManager } from "../tools/gitRollback.js";
-import { checkForUpdate } from "../updater.js";
+import { checkForUpdate, getLocalPackageInfo } from "../updater.js";
 import { MCPClient } from "../mcp/client.js";
 import { MemoryManager } from "../memory/manager.js";
 import { SkillManager } from "../skills/loader.js";
@@ -591,8 +591,14 @@ export function startTui(options: TuiOptions): void {
         break;
       }
 
+      case "version": {
+        const { version } = getLocalPackageInfo();
+        store.setNotice(`ruid v${version}`);
+        break;
+      }
+
       case "help":
-        store.setNotice("/new /resume /sessions /setup /mcp /skills /memory /remember /providers /connect <name> /model <id> /mode <code|plan|auto> /rollback /tasks /clear /exit");
+        store.setNotice("/new /resume /sessions /setup /mcp /skills /memory /remember /providers /connect <name> /model <id> /mode <code|plan|auto> /rollback /tasks /version /clear /exit");
         break;
 
       default: {

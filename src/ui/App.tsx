@@ -12,7 +12,7 @@ import { ModelPicker } from "./components/ModelPicker.js";
 import { ProviderPicker } from "./components/ProviderPicker.js";
 import { TaskPanel } from "./components/TaskPanel.js";
 import { UpdatePrompt } from "./components/UpdatePrompt.js";
-import { performUpdate } from "../updater.js";
+import { performUpdate, getLocalPackageInfo } from "../updater.js";
 import { loadConfig } from "../config.js";
 
 /** Terminal dimensions with resize tracking. */
@@ -174,12 +174,13 @@ export function App({
   const viewportHeight = Math.max(5, rows - overhead);
   const currentConfig = loadConfig();
   const activeProviderConfig = currentConfig.providers[state.providerName];
+  const { version: currentVersion } = getLocalPackageInfo();
 
   return (
     <Box flexDirection="column" height={rows} paddingX={1}>
       <Box flexDirection="column" height={viewportHeight} justifyContent={showWelcome ? "center" : "flex-start"}>
         {showWelcome ? (
-          <Welcome connected={state.connected} />
+          <Welcome connected={state.connected} version={currentVersion} />
         ) : (
           <MessageList
             messages={state.messages}
@@ -262,6 +263,7 @@ export function App({
         skillCount={state.skillCount}
         usage={state.sessionUsage}
         lastTurnLatencyMs={state.lastTurnDurationMs}
+        version={currentVersion}
       />
     </Box>
   );

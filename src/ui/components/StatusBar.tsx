@@ -21,6 +21,7 @@ export function StatusBar({
   skillCount = 0,
   usage,
   lastTurnLatencyMs,
+  version,
 }: {
   providerName: string;
   model: string;
@@ -35,6 +36,7 @@ export function StatusBar({
   skillCount?: number;
   usage?: SessionUsage;
   lastTurnLatencyMs?: number;
+  version?: string;
 }) {
   const [frame, setFrame] = useState(0);
   useEffect(() => {
@@ -73,7 +75,7 @@ export function StatusBar({
           [{modeLabel}]
         </Text>
         <Text dimColor>
-          {" "}{connected ? `${providerName} · ${model || "(no model)"}${thinkingBadge}` : "not connected — /setup"}
+          {" "}{version ? `v${version} · ` : ""}{connected ? `${providerName} · ${model || "(no model)"}${thinkingBadge}` : "not connected — /setup"}
         </Text>
       </Box>
 

@@ -210,7 +210,7 @@ export class SkillManager {
     }
 
     lines.push(
-      "When the user requests one of these skills or types a slash command (e.g. `/<skill-name>`), execute the skill via `skill_run` or adhere directly to its workflow.",
+      "When a task or user request relates to any of these skills or their trigger domains, call `skill_run` first before creating or editing files so that you apply its specific instructions and design system.",
       "</available_skills>"
     );
 
