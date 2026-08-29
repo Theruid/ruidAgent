@@ -41,6 +41,22 @@ describe("Structured Context Layering & Ephemeral Caching", () => {
 
     // Cache creation: 1,000,000 write tokens => 1.0 * (3.0 * 1.25) = $3.75
     const costCacheCreation = calculateCost(model, 1_000_000, 0, 0, 1_000_000);
-    assert.strictEqual(Math.round(costCacheCreation * 100) / 100, 3.75);
+    assert.strictEqual(costCacheCreation, 3.75);
+  });
+
+  it("injects memory and available skills blocks into dynamic block", () => {
+    const blocks = buildSystemPromptBlocks({
+      workspaceRoot: "/workspace/app",
+      platform: "linux",
+      mode: "code",
+      memorySummary: "- [style] (feedback): Always use TypeScript strict mode",
+      skillsListing: "<available_skills>\n- /deploy: Deploy app to cloud\n</available_skills>",
+    });
+
+    assert.strictEqual(blocks.length, 2);
+    assert.match(blocks[1].text, /<memory>/);
+    assert.match(blocks[1].text, /Always use TypeScript strict mode/);
+    assert.match(blocks[1].text, /<available_skills>/);
+    assert.match(blocks[1].text, /\/deploy: Deploy app to cloud/);
   });
 });

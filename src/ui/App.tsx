@@ -38,6 +38,8 @@ function useTerminalDimensions(): { rows: number; columns: number } {
   return dims;
 }
 
+import type { CommandItem } from "./components/CommandPalette.js";
+
 export interface AppProps {
   store: AgentUIStore;
   onSubmit(line: string): void;
@@ -49,6 +51,7 @@ export interface AppProps {
   onPickModel(model: string | null): void;
   onPickProvider(providerName: string | null): void;
   onCycleMode?(): void;
+  customCommands?: CommandItem[];
 }
 
 export function App({
@@ -61,6 +64,7 @@ export function App({
   onPickModel,
   onPickProvider,
   onCycleMode,
+  customCommands = [],
 }: AppProps) {
   const state: UIState = useSyncExternalStore(store.subscribe, store.getState);
   const { rows, columns } = useTerminalDimensions();
@@ -226,6 +230,7 @@ export function App({
           onSubmit={onSubmit}
           disabled={state.phase === "running" || Boolean(state.pendingPermission) || Boolean(state.updateInfo?.hasUpdate)}
           initialValue={state.inputDraft}
+          customCommands={customCommands}
           onPaletteChange={setPaletteOpen}
           onCycleMode={onCycleMode}
           onScrollUp={() => store.scrollUp(2)}
@@ -254,6 +259,7 @@ export function App({
         mode={state.mode}
         taskCount={state.tasks.length}
         mcpCount={state.mcpServerCount}
+        skillCount={state.skillCount}
         usage={state.sessionUsage}
         lastTurnLatencyMs={state.lastTurnDurationMs}
       />

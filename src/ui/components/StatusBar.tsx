@@ -18,6 +18,7 @@ export function StatusBar({
   mode = "code",
   taskCount = 0,
   mcpCount = 0,
+  skillCount = 0,
   usage,
   lastTurnLatencyMs,
 }: {
@@ -31,6 +32,7 @@ export function StatusBar({
   mode?: AgentMode;
   taskCount?: number;
   mcpCount?: number;
+  skillCount?: number;
   usage?: SessionUsage;
   lastTurnLatencyMs?: number;
 }) {
@@ -88,6 +90,7 @@ export function StatusBar({
         <Text dimColor>
           {running ? `${SPIN[frame % SPIN.length]} ` : ""}
           {mcpCount > 0 ? `⚡ ${mcpCount} MCP · ` : ""}
+          {skillCount > 0 ? `${skillCount} skills · ` : ""}
           {taskCount > 0 ? `${taskCount} tasks · ` : ""}
           {msgCount} msgs · <Text color="yellow">Tab: mode</Text>
         </Text>

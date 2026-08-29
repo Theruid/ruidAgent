@@ -29,11 +29,36 @@ export function loadProjectInstructions(workspaceRoot: string): string | null {
   return loadedRules.length > 0 ? loadedRules.join("\n\n") : null;
 }
 
+export interface SystemPromptContext {
+  workspaceRoot: string;
+  platform: string;
+  mode?: AgentMode;
+  memorySummary?: string | null;
+  skillsListing?: string | null;
+}
+
 export function buildSystemPromptBlocks(
-  workspaceRoot: string,
-  platform: string,
-  mode: AgentMode = "code"
+  workspaceRootOrContext: string | SystemPromptContext,
+  platformArg?: string,
+  modeArg: AgentMode = "code"
 ): SystemPromptBlock[] {
+  let workspaceRoot: string;
+  let platform: string;
+  let mode: AgentMode;
+  let memorySummary: string | null = null;
+  let skillsListing: string | null = null;
+
+  if (typeof workspaceRootOrContext === "object") {
+    workspaceRoot = workspaceRootOrContext.workspaceRoot;
+    platform = workspaceRootOrContext.platform;
+    mode = workspaceRootOrContext.mode ?? "code";
+    memorySummary = workspaceRootOrContext.memorySummary ?? null;
+    skillsListing = workspaceRootOrContext.skillsListing ?? null;
+  } else {
+    workspaceRoot = workspaceRootOrContext;
+    platform = platformArg ?? process.platform;
+    mode = modeArg;
+  }
   let modeGuideline = "";
   if (mode === "plan") {
     modeGuideline = `<mode_guidelines>
@@ -92,6 +117,21 @@ ${modeGuideline}
     ? `<custom_instructions>\n${customInstructions}\n</custom_instructions>`
     : "";
 
+  const memoryBlockText = memorySummary
+    ? `<memory>\n${memorySummary}\n</memory>`
+    : "";
+
+  const skillsBlockText = skillsListing ? `${skillsListing}` : "";
+
+  const dynamicSections = [
+    environmentText,
+    memoryBlockText,
+    skillsBlockText,
+    customInstructionsText,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+
   return [
     {
       type: "text",
@@ -100,7 +140,7 @@ ${modeGuideline}
     },
     {
       type: "text",
-      text: customInstructionsText ? `${environmentText}\n\n${customInstructionsText}` : environmentText,
+      text: dynamicSections,
     },
   ];
 }

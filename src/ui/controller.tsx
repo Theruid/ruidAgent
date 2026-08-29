@@ -24,6 +24,9 @@ import { SnapshotManager } from "../tools/snapshot.js";
 import { GitCheckpointManager } from "../tools/gitRollback.js";
 import { checkForUpdate } from "../updater.js";
 import { MCPClient } from "../mcp/client.js";
+import { MemoryManager } from "../memory/manager.js";
+import { SkillManager } from "../skills/loader.js";
+import type { CommandItem } from "./components/CommandPalette.js";
 
 /**
  * Scans a user prompt for `@filepath` mentions and attaches file contents if found.
@@ -99,6 +102,18 @@ export function startTui(options: TuiOptions): void {
   const taskStore = new TaskStore();
   const snapshots = new SnapshotManager();
   const gitCheckpoints = new GitCheckpointManager();
+  const memoryManager = new MemoryManager({ workspaceRoot: process.cwd() });
+  const skillManager = new SkillManager({ workspaceRoot: process.cwd() });
+
+  let customSkillCommands: CommandItem[] = [];
+  skillManager.loadSkills().then((skills) => {
+    store.setSkillCount(skills.length);
+    customSkillCommands = skills.map((s) => ({
+      name: `/${s.name}`,
+      args: s.args,
+      description: `[Skill] ${s.description}`,
+    }));
+  }).catch(() => {});
 
   // Instantiate and connect configured MCP servers
   const mcpClients: MCPClient[] = [];
@@ -132,6 +147,7 @@ export function startTui(options: TuiOptions): void {
       onAbortTurn={abortTurn}
       onExit={exit}
       onPickSession={pickSession}
+      customCommands={customSkillCommands}
       onSetupDone={() => {
         store.setPhase("idle");
         tryConnect();
@@ -256,6 +272,8 @@ export function startTui(options: TuiOptions): void {
         taskStore,
         snapshots,
         gitCheckpoints,
+        memoryManager,
+        skillManager,
         mcpClients,
         hooks: appConfig.hooks,
         sessionId,
@@ -508,12 +526,95 @@ export function startTui(options: TuiOptions): void {
         break;
       }
 
+      case "remember": {
+        const text = rest.join(" ").trim();
+        if (!text) {
+          store.setNotice("Usage: /remember <rule, preference, or fact>");
+          break;
+        }
+        try {
+          const saved = await memoryManager.store({
+            category: "feedback",
+            scope: "workspace",
+            title: text.slice(0, 40),
+            content: text,
+          });
+          store.setNotice(`✓ Saved to memory [${saved.id}]: "${text}"`);
+        } catch (err: any) {
+          store.setNotice(`Failed to save memory: ${err.message}`);
+        }
+        break;
+      }
+
+      case "memory": {
+        const sub = rest[0]?.toLowerCase();
+        if (sub === "forget" || sub === "delete") {
+          const id = rest[1];
+          if (!id) {
+            store.setNotice("Usage: /memory forget <id>");
+            break;
+          }
+          const ok = await memoryManager.forget(id);
+          store.setNotice(ok ? `✓ Forgot memory record "${id}"` : `Memory record "${id}" not found.`);
+          break;
+        }
+
+        if (sub === "rebuild") {
+          await memoryManager.rebuildIndex("workspace");
+          await memoryManager.rebuildIndex("global");
+          store.setNotice("✓ Rebuilt MEMORY.md index across workspace and global scopes.");
+          break;
+        }
+
+        // List memories
+        const records = await memoryManager.list();
+        if (records.length === 0) {
+          store.setNotice("No persistent memory stored yet. Use /remember <text> or memory_store.");
+          break;
+        }
+
+        const lines = records.slice(0, 10).map((r) => `• [${r.id}] (${r.scope}/${r.category}) ${r.title}`);
+        if (records.length > 10) lines.push(`… and ${records.length - 10} more`);
+        store.setNotice(`Active Memories (${records.length}):\n${lines.join("\n")}`);
+        break;
+      }
+
+      case "skills": {
+        const skills = await skillManager.loadSkills();
+        if (skills.length === 0) {
+          store.setNotice("No custom skills found in .ruid/skills/ or ~/.ruid/skills/");
+          break;
+        }
+
+        const lines = skills.map((s) => `• /${s.name}${s.args ? ` ${s.args}` : ""}${s.mode ? ` [${s.mode}]` : ""}: ${s.description}`);
+        store.setNotice(`Available Skills (${skills.length}):\n${lines.join("\n")}`);
+        break;
+      }
+
       case "help":
-        store.setNotice("/new /resume /sessions /setup /mcp /providers /connect <name> /model <id> /mode <code|plan|auto> /rollback /tasks /clear /exit");
+        store.setNotice("/new /resume /sessions /setup /mcp /skills /memory /remember /providers /connect <name> /model <id> /mode <code|plan|auto> /rollback /tasks /clear /exit");
         break;
 
-      default:
-        store.setNotice(`Unknown command. /help lists commands.`);
+      default: {
+        // Check if custom skill matches the slash command
+        const skill = await skillManager.getSkill(name);
+        if (skill) {
+          const argsStr = rest.join(" ");
+          const renderedPrompt = skillManager.renderSkill(skill, argsStr);
+
+          // If skill explicitly requests a mode, apply it
+          if (skill.mode && skill.mode !== store.getState().mode) {
+            store.setMode(skill.mode);
+            permissions.setMode(skill.mode);
+          }
+
+          store.setNotice(`Executing skill: /${skill.name}`);
+          await runTurn(renderedPrompt);
+          break;
+        }
+
+        store.setNotice(`Unknown command /${name}. /help lists commands.`);
+      }
     }
   }
 

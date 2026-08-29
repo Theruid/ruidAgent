@@ -8,6 +8,10 @@ import { SnapshotManager, rollbackTool } from "./snapshot.js";
 import { GitCheckpointManager, gitRollbackTool } from "./gitRollback.js";
 import { subagentTool, subagentParallelTool } from "./subagent.js";
 import { webSearchTool, webFetchTool } from "./web.js";
+import { memoryStoreTool, memoryRecallTool, memoryListTool, memoryForgetTool } from "./memory.js";
+import { skillRunTool } from "./skill.js";
+import type { MemoryManager } from "../memory/manager.js";
+import type { SkillManager } from "../skills/loader.js";
 import type { ToolDef, LLMProvider } from "../providers/types.js";
 import type { MCPClient } from "../mcp/client.js";
 
@@ -26,6 +30,8 @@ export interface BuildRegistryOptions {
   taskStore?: TaskStore;
   snapshots?: SnapshotManager;
   gitCheckpoints?: GitCheckpointManager;
+  memoryManager?: MemoryManager;
+  skillManager?: SkillManager;
   provider?: LLMProvider;
   model?: string;
   signal?: AbortSignal;
@@ -50,6 +56,8 @@ export async function buildRegistry(
   let taskStore: TaskStore;
   let snapshots: SnapshotManager;
   let gitCheckpoints: GitCheckpointManager | undefined;
+  let memoryManager: MemoryManager | undefined;
+  let skillManager: SkillManager | undefined;
   let provider: LLMProvider | undefined;
   let model: string | undefined;
   let signal: AbortSignal | undefined;
@@ -62,6 +70,8 @@ export async function buildRegistry(
     taskStore = optionsOrWs.taskStore ?? new TaskStore();
     snapshots = optionsOrWs.snapshots ?? new SnapshotManager();
     gitCheckpoints = optionsOrWs.gitCheckpoints;
+    memoryManager = optionsOrWs.memoryManager;
+    skillManager = optionsOrWs.skillManager;
     provider = optionsOrWs.provider;
     model = optionsOrWs.model;
     signal = optionsOrWs.signal;
@@ -94,6 +104,15 @@ export async function buildRegistry(
     { ...taskCreateTool(taskStore), requiresPermission: false },
     { ...taskUpdateTool(taskStore), requiresPermission: false },
     { ...taskDeleteTool(taskStore), requiresPermission: false },
+    ...(memoryManager
+      ? [
+          { ...memoryStoreTool(memoryManager), requiresPermission: false },
+          { ...memoryRecallTool(memoryManager), requiresPermission: false },
+          { ...memoryListTool(memoryManager), requiresPermission: false },
+          { ...memoryForgetTool(memoryManager), requiresPermission: false },
+        ]
+      : []),
+    ...(skillManager ? [{ ...skillRunTool(skillManager), requiresPermission: false }] : []),
     { ...processStatusTool(processManager), requiresPermission: false },
     { ...processLogsTool(processManager), requiresPermission: false },
     { ...processKillTool(processManager), requiresPermission: true },

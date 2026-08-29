@@ -65,6 +65,8 @@ export interface UIState {
   tasks: AgentTask[];
   updateInfo: UpdateInfo | null;
   mcpServerCount: number;
+  skillCount: number;
+  memoryCount: number;
 }
 
 // Framework-free store so non-React code (agent loop callbacks) can push
@@ -135,6 +137,8 @@ export class AgentUIStore {
       tasks: [],
       updateInfo: null,
       mcpServerCount: 0,
+      skillCount: 0,
+      memoryCount: 0,
     };
   }
 
@@ -199,6 +203,14 @@ export class AgentUIStore {
 
   setMcpServerCount(count: number): void {
     this.set({ mcpServerCount: count }, true);
+  }
+
+  setSkillCount(count: number): void {
+    this.set({ skillCount: count }, true);
+  }
+
+  setMemoryCount(count: number): void {
+    this.set({ memoryCount: count }, true);
   }
 
   setScrollOffset(offset: number): void {

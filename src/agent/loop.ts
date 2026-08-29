@@ -18,6 +18,8 @@ import { logAudit } from "../audit/log.js";
 import type { MCPClient } from "../mcp/client.js";
 import type { HookConfig } from "../config.js";
 import { runHooks } from "../hooks.js";
+import { MemoryManager } from "../memory/manager.js";
+import { SkillManager } from "../skills/loader.js";
 
 export interface LoopOptions {
   provider: LLMProvider;
@@ -35,6 +37,8 @@ export interface LoopOptions {
   taskStore?: TaskStore;
   snapshots?: SnapshotManager;
   gitCheckpoints?: GitCheckpointManager;
+  memoryManager?: MemoryManager;
+  skillManager?: SkillManager;
   processManager?: ProcessManager;
   mcpClients?: MCPClient[];
   hooks?: HookConfig;
@@ -74,6 +78,8 @@ export async function runAgentLoop(options: LoopOptions): Promise<LLMMessage[]> 
   const snapshots = options.snapshots ?? new SnapshotManager();
   const gitCheckpoints = options.gitCheckpoints ?? new GitCheckpointManager();
   const processManager = options.processManager ?? new ProcessManager();
+  const memoryManager = options.memoryManager ?? new MemoryManager({ workspaceRoot: ws.root });
+  const skillManager = options.skillManager ?? new SkillManager({ workspaceRoot: ws.root });
   await gitCheckpoints.beginTurn(ws.root);
   snapshots.beginTurn();
 
@@ -82,6 +88,8 @@ export async function runAgentLoop(options: LoopOptions): Promise<LLMMessage[]> 
     taskStore,
     snapshots,
     gitCheckpoints,
+    memoryManager,
+    skillManager,
     provider: options.provider,
     model: options.model,
     signal: options.signal,
@@ -124,7 +132,17 @@ export async function runAgentLoop(options: LoopOptions): Promise<LLMMessage[]> 
     messages.push({ role: "user", content: [{ type: "text", text: options.initialPrompt }] });
   }
 
-  const systemBlocks = buildSystemPromptBlocks(ws.root, process.platform, permissions.getMode?.() ?? "code");
+  const memorySummary = await memoryManager.getSystemPromptSummary(200);
+  const availableSkills = await skillManager.loadSkills();
+  const skillsListing = skillManager.formatSystemPromptSkills(availableSkills);
+
+  const systemBlocks = buildSystemPromptBlocks({
+    workspaceRoot: ws.root,
+    platform: process.platform,
+    mode: permissions.getMode?.() ?? "code",
+    memorySummary,
+    skillsListing,
+  });
 
   // Track active stale_state failures per resource path
   const staleStateMap = new Map<string, StaleStateTrack>();

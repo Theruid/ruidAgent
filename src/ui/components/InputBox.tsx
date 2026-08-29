@@ -1,6 +1,6 @@
 import React, { useState, useRef, useMemo, useEffect } from "react";
 import { Box, Text, useInput } from "ink";
-import { CommandPalette, COMMANDS } from "./CommandPalette.js";
+import { CommandPalette, COMMANDS, type CommandItem } from "./CommandPalette.js";
 import { FilePalette } from "./FilePalette.js";
 import { listWorkspaceFiles, searchFiles } from "../utils/fileSearch.js";
 
@@ -9,6 +9,7 @@ export interface InputBoxProps {
   disabled: boolean;
   placeholder: string;
   initialValue?: string;
+  customCommands?: CommandItem[];
   onPaletteChange?(isOpen: boolean): void;
   onCycleMode?(): void;
   onScrollUp?(): void;
@@ -23,6 +24,7 @@ export function InputBox({
   disabled,
   placeholder,
   initialValue,
+  customCommands = [],
   onPaletteChange,
   onCycleMode,
   onScrollUp,
@@ -54,10 +56,12 @@ export function InputBox({
     }
   }, []);
 
+  const allCommands = useMemo(() => [...COMMANDS, ...customCommands], [customCommands]);
+
   // Determine if slash command palette should be shown
   const isSlashCmd = value.startsWith("/") && !value.includes(" ");
   const matchingCmds = isSlashCmd
-    ? COMMANDS.filter((cmd) => {
+    ? allCommands.filter((cmd) => {
         const q = value.toLowerCase();
         return (
           q === "/" ||
@@ -304,7 +308,7 @@ export function InputBox({
   return (
     <Box flexDirection="column" marginTop={disabled ? 0 : undefined}>
       {shouldShowCmdPalette && (
-        <CommandPalette query={value} selectedIndex={selectedCmdIdx} />
+        <CommandPalette query={value} selectedIndex={selectedCmdIdx} customCommands={customCommands} />
       )}
       {shouldShowFilePalette && (
         <FilePalette query={atQuery || ""} files={matchingFiles} selectedIndex={selectedFileIdx} />

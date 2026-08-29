@@ -38,6 +38,11 @@ const TIER_0_READ_ONLY_TOOLS = new Set([
   "web_fetch",
   "process_status",
   "process_logs",
+  "memory_store",
+  "memory_recall",
+  "memory_list",
+  "memory_forget",
+  "skill_run",
 ]);
 
 const SENSITIVE_PATH_PATTERNS = [

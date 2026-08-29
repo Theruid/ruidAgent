@@ -11,6 +11,9 @@ export const COMMANDS: CommandItem[] = [
   { name: "/mode", args: "<code|plan|auto>", description: "Switch mode or show current (Tab cycles)" },
   { name: "/think", description: "Toggle extended thinking/reasoning ON or OFF" },
   { name: "/tasks", description: "Show active plan and tasks" },
+  { name: "/memory", args: "[list|forget <id>|rebuild]", description: "List or manage persistent project and user memory" },
+  { name: "/remember", args: "<guidance>", description: "Quickly save a feedback rule or preference to memory" },
+  { name: "/skills", description: "List all discovered workspace and global skills" },
   { name: "/rollback", args: "[turn]", description: "Revert file modifications made during turn" },
   { name: "/new", description: "Start a new chat session" },
   { name: "/resume", description: "Pick and resume a saved session" },
@@ -28,11 +31,14 @@ export const COMMANDS: CommandItem[] = [
 export function CommandPalette({
   query,
   selectedIndex,
+  customCommands = [],
 }: {
   query: string;
   selectedIndex: number;
+  customCommands?: CommandItem[];
 }) {
-  const filtered = COMMANDS.filter((cmd) => {
+  const allCommands = [...COMMANDS, ...customCommands];
+  const filtered = allCommands.filter((cmd) => {
     const q = query.toLowerCase().trim();
     if (!q || q === "/") return true;
     return cmd.name.toLowerCase().startsWith(q) || cmd.name.slice(1).toLowerCase().startsWith(q.replace(/^\//, ""));
