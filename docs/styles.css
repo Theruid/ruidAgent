@@ -1,0 +1,121 @@
+/* Custom Layout & Visual Enhancements for ruid Landing Page */
+
+@layer utilities {
+  /* Background Grid Pattern */
+  .bg-grid-pattern {
+    background-size: 40px 40px;
+    background-image: 
+      linear-gradient(to right, rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+  }
+
+  /* Custom Clean Scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: #090a0f;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: #1e2433;
+    border-radius: 3px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: #3b82f6;
+  }
+}
+
+/* Custom Text Selection */
+::selection {
+  background-color: #2563eb;
+  color: #ffffff;
+}
+
+/* Terminal Lines & Typing Effect */
+.term-line {
+  margin-bottom: 0.35rem;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.term-tag {
+  display: inline-block;
+  padding: 0.1rem 0.4rem;
+  border-radius: 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  margin-right: 0.5rem;
+}
+
+.term-prompt {
+  color: #60a5fa;
+  font-weight: 700;
+  margin-right: 0.5rem;
+}
+
+.term-success {
+  color: #34d399;
+}
+
+.term-info {
+  color: #93c5fd;
+}
+
+.term-warning {
+  color: #fbbf24;
+}
+
+.term-muted {
+  color: #64748b;
+}
+
+.term-code {
+  color: #e2e8f0;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 0.05rem 0.3rem;
+  border-radius: 0.2rem;
+}
+
+/* Tab Switching State */
+.terminal-tab.active {
+  background-color: rgba(16, 185, 129, 0.15);
+  border-color: rgba(16, 185, 129, 0.4);
+  color: #34d399;
+}
+
+.terminal-tab[data-mode="plan"].active {
+  background-color: rgba(59, 130, 246, 0.15);
+  border-color: rgba(59, 130, 246, 0.4);
+  color: #60a5fa;
+}
+
+.terminal-tab[data-mode="auto"].active {
+  background-color: rgba(245, 158, 11, 0.15);
+  border-color: rgba(245, 158, 11, 0.4);
+  color: #fbbf24;
+}
+
+/* Subtle Shimmer for Highlighting */
+@keyframes textShimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.shimmer-text {
+  background: linear-gradient(90deg, #94a3b8 0%, #ffffff 50%, #94a3b8 100%);
+  background-size: 200% auto;
+  color: transparent;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: textShimmer 4s linear infinite;
+}
+
+/* Focus styles for keyboard accessibility */
+a:focus-visible, button:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+}

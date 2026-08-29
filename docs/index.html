@@ -1,780 +1,862 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="scroll-smooth dark">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ruid — Standalone Terminal Coding Agent</title>
-  <meta name="description" content="A fast, standalone CLI coding agent that works with any LLM provider — Anthropic, OpenAI, DeepSeek, Groq, Ollama, LM Studio, and local models.">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-  <style>
-    :root {
-      --bg: #090d16;
-      --border: rgba(255, 255, 255, 0.08);
-      --border-accent: rgba(56, 189, 248, 0.35);
-      --text: #f8fafc;
-      --text-muted: #94a3b8;
-      --text-sub: #64748b;
-      --primary: #38bdf8;
-      --primary-glow: rgba(56, 189, 248, 0.2);
-      --terminal-bg: #030712;
-    }
-
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
-
-    body {
-      background-color: var(--bg);
-      color: var(--text);
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-      line-height: 1.5;
-      overflow-x: hidden;
-      -webkit-font-smoothing: antialiased;
-      height: 100vh;
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-    }
-
-    /* Ambient animated aurora */
-    .glow-bg {
-      position: fixed;
-      top: 0;
-      left: 50%;
-      transform: translateX(-50%);
-      width: 100vw;
-      height: 100vh;
-      pointer-events: none;
-      z-index: -2;
-      background:
-        radial-gradient(circle at 50% 5%, rgba(56, 189, 248, 0.12), transparent 45%),
-        radial-gradient(circle at 80% 20%, rgba(99, 102, 241, 0.08), transparent 35%),
-        radial-gradient(circle at 20% 50%, rgba(217, 70, 239, 0.06), transparent 40%);
-    }
-
-    .aurora-blob {
-      position: fixed;
-      border-radius: 50%;
-      filter: blur(90px);
-      opacity: 0.45;
-      pointer-events: none;
-      z-index: -1;
-      animation: drift 22s ease-in-out infinite alternate;
-    }
-
-    .aurora-1 {
-      width: 520px;
-      height: 520px;
-      top: -160px;
-      left: 8%;
-      background: radial-gradient(circle, rgba(56, 189, 248, 0.28), transparent 70%);
-    }
-
-    .aurora-2 {
-      width: 460px;
-      height: 460px;
-      top: 30%;
-      right: -120px;
-      background: radial-gradient(circle, rgba(129, 140, 248, 0.24), transparent 70%);
-      animation-delay: -7s;
-      animation-duration: 26s;
-    }
-
-    .aurora-3 {
-      width: 420px;
-      height: 420px;
-      bottom: -140px;
-      left: 25%;
-      background: radial-gradient(circle, rgba(217, 70, 239, 0.18), transparent 70%);
-      animation-delay: -14s;
-      animation-duration: 30s;
-    }
-
-    @keyframes drift {
-      0%   { transform: translate(0, 0) scale(1); }
-      33%  { transform: translate(60px, 40px) scale(1.08); }
-      66%  { transform: translate(-40px, 70px) scale(0.95); }
-      100% { transform: translate(30px, -30px) scale(1.05); }
-    }
-
-    @media (prefers-reduced-motion: reduce) {
-      .aurora-blob { animation: none; }
-    }
-
-    /* Top Navigation */
-    nav {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 0.85rem 2rem;
-      max-width: 1200px;
-      width: 100%;
-      margin: 0 auto;
-      border-bottom: 1px solid var(--border);
-      backdrop-filter: blur(12px);
-      position: sticky;
-      top: 0;
-      z-index: 100;
-    }
-
-    .brand-wrap {
-      display: flex;
-      align-items: center;
-      gap: 1.25rem;
-    }
-
-    .brand {
-      display: flex;
-      align-items: center;
-      gap: 0.65rem;
-      text-decoration: none;
-      color: var(--text);
-      font-weight: 700;
-      font-size: 1.15rem;
-      letter-spacing: -0.02em;
-    }
-
-    .nav-bio {
-      font-size: 0.76rem;
-      color: var(--text-sub);
-      border-left: 1px solid var(--border);
-      padding-left: 1rem;
-    }
-    .nav-bio strong {
-      color: #94a3b8;
-      font-weight: 600;
-    }
-
-    .brand-badge {
-      font-size: 0.7rem;
-      padding: 0.2rem 0.5rem;
-      border-radius: 999px;
-      background: rgba(56, 189, 248, 0.12);
-      border: 1px solid rgba(56, 189, 248, 0.3);
-      color: var(--primary);
-      font-family: 'JetBrains Mono', monospace;
-    }
-
-    .nav-right {
-      display: flex;
-      align-items: center;
-      gap: 0.75rem;
-    }
-
-    .btn-nav-action {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.45rem;
-      background: rgba(255, 255, 255, 0.05);
-      border: 1px solid var(--border);
-      padding: 0.45rem 0.85rem;
-      border-radius: 8px;
-      color: var(--text);
-      text-decoration: none;
-      font-size: 0.82rem;
-      font-weight: 500;
-      transition: all 0.2s ease;
-    }
-
-    .btn-nav-action:hover {
-      background: rgba(255, 255, 255, 0.1);
-      border-color: rgba(255, 255, 255, 0.25);
-      transform: translateY(-1px);
-    }
-
-    .btn-nav-star {
-      background: rgba(234, 179, 8, 0.1);
-      border-color: rgba(234, 179, 8, 0.3);
-      color: #fef08a;
-    }
-
-    .btn-nav-star:hover {
-      background: rgba(234, 179, 8, 0.2);
-      border-color: rgba(234, 179, 8, 0.5);
-    }
-
-    .container {
-      max-width: 1200px;
-      width: 100%;
-      margin: 0 auto;
-      padding: 0 1.5rem;
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-    }
-
-    /* Top Action Bar */
-    .top-action-bar {
-      display: flex;
-      justify-content: center;
-      padding: 0.75rem 1rem 0.6rem;
-    }
-
-    .install-box {
-      display: inline-flex;
-      align-items: center;
-      background: #030712;
-      border: 1px solid rgba(56, 189, 248, 0.3);
-      border-radius: 8px;
-      padding: 0.4rem 0.85rem;
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6), 0 0 20px rgba(56, 189, 248, 0.12);
-      gap: 0.85rem;
-    }
-
-    .install-command {
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 0.85rem;
-      color: #38bdf8;
-      user-select: all;
-    }
-
-    .install-command .prompt {
-      color: var(--text-sub);
-      user-select: none;
-      margin-right: 0.5rem;
-    }
-
-    .btn-copy {
-      background: rgba(56, 189, 248, 0.15);
-      border: 1px solid rgba(56, 189, 248, 0.3);
-      color: #e0f2fe;
-      padding: 0.25rem 0.65rem;
-      border-radius: 5px;
-      cursor: pointer;
-      font-size: 0.75rem;
-      font-weight: 600;
-      transition: all 0.2s;
-      display: flex;
-      align-items: center;
-      gap: 0.35rem;
-    }
-
-    .btn-copy:hover {
-      background: #38bdf8;
-      color: #030712;
-    }
-
-    /* LIVE TERMINAL EMULATOR */
-    .demo-section {
-      margin: 0.25rem 0 1rem;
-      width: 100%;
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-    }
-
-    .terminal-wrapper {
-      background: var(--terminal-bg);
-      border: 1px solid rgba(255, 255, 255, 0.12);
-      border-radius: 10px;
-      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.85), 0 0 30px var(--primary-glow);
-      overflow: hidden;
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 0.83rem;
-      line-height: 1.4;
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-    }
-
-    .terminal-window-header {
-      background: #0b0f19;
-      padding: 0.5rem 0.85rem;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      border-bottom: 1px solid var(--border);
-    }
-
-    .window-dots {
-      display: flex;
-      gap: 6px;
-    }
-
-    .dot {
-      width: 10px;
-      height: 10px;
-      border-radius: 50%;
-      display: inline-block;
-    }
-    .dot.red { background: #ff5f56; }
-    .dot.yellow { background: #ffbd2e; }
-    .dot.green { background: #27c93f; }
-
-    .window-title {
-      font-size: 0.72rem;
-      color: var(--text-sub);
-      font-weight: 500;
-    }
-
-    .scenario-tabs {
-      display: flex;
-      gap: 0.4rem;
-      padding: 0.45rem 0.85rem;
-      background: rgba(255, 255, 255, 0.02);
-      border-bottom: 1px solid var(--border);
-      overflow-x: auto;
-    }
-
-    .scenario-btn {
-      background: transparent;
-      border: 1px solid var(--border);
-      color: var(--text-muted);
-      padding: 0.25rem 0.65rem;
-      border-radius: 5px;
-      cursor: pointer;
-      font-size: 0.72rem;
-      font-family: 'Inter', sans-serif;
-      transition: all 0.2s;
-      white-space: nowrap;
-    }
-
-    .scenario-btn.active, .scenario-btn:hover {
-      background: rgba(56, 189, 248, 0.15);
-      border-color: var(--primary);
-      color: #fff;
-    }
-
-    /* Terminal Screen UI Container */
-    .app-screen {
-      padding: 0.85rem 1rem;
-      min-height: 400px;
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-      overflow-y: auto;
-      background: #020617;
-    }
-
-    /* Welcome Component (src/ui/components/Welcome.tsx) */
-    .app-welcome {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      text-align: center;
-      padding: 3rem 0;
-      gap: 0.75rem;
-    }
-
-    .welcome-logo {
-      color: #06b6d4;
-      font-weight: 700;
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 0.95rem;
-      line-height: 1.15;
-      white-space: pre;
-    }
-
-    .welcome-sub {
-      color: #64748b;
-      font-size: 0.8rem;
-    }
-
-    /* MessageList (src/ui/components/MessageList.tsx) */
-    .chat-messages {
-      display: flex;
-      flex-direction: column;
-      gap: 0.75rem;
-      flex: 1;
-      margin-bottom: 0.75rem;
-    }
-
-    .msg-block {
-      display: flex;
-      flex-direction: column;
-      gap: 0.25rem;
-    }
-
-    .msg-header-user {
-      color: #38bdf8;
-      font-weight: 700;
-      font-size: 0.78rem;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-    }
-
-    .msg-header-agent {
-      color: #22c55e;
-      font-weight: 700;
-      font-size: 0.78rem;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-    }
-
-    .msg-body-user {
-      color: #f1f5f9;
-      font-size: 0.85rem;
-      padding-left: 0.5rem;
-      border-left: 2px solid rgba(56, 189, 248, 0.3);
-    }
-
-    .msg-body-agent {
-      color: #cbd5e1;
-      font-size: 0.85rem;
-      padding-left: 0.5rem;
-      border-left: 2px solid rgba(34, 197, 94, 0.3);
-      line-height: 1.5;
-    }
-
-    /* Collapsed tool badges */
-    .tool-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.4rem;
-      font-size: 0.78rem;
-      padding: 0.15rem 0.5rem;
-      border-radius: 4px;
-      margin-top: 0.35rem;
-      margin-left: 0.5rem;
-      background: rgba(255, 255, 255, 0.03);
-      border: 1px solid var(--border);
-    }
-    .tool-badge.success { color: #94a3b8; }
-    .tool-badge.success .dot-bullet { color: #22c55e; }
-    .tool-badge.swarm { border-color: rgba(168, 85, 247, 0.35); }
-    .tool-badge.swarm .dot-bullet { color: #c084fc; }
-
-    /* TaskPanel Component (src/ui/components/TaskPanel.tsx) */
-    .task-panel-box {
-      border: 1px solid #d946ef;
-      border-radius: 8px;
-      padding: 0.6rem 0.85rem;
-      background: rgba(217, 70, 239, 0.04);
-      margin-bottom: 0.75rem;
-      display: flex;
-      flex-direction: column;
-      gap: 0.35rem;
-    }
-
-    .task-panel-header {
-      font-weight: 700;
-      color: #d946ef;
-      font-size: 0.78rem;
-      margin-bottom: 0.2rem;
-    }
-
-    .task-item {
-      display: flex;
-      align-items: center;
-      gap: 0.45rem;
-      font-size: 0.8rem;
-      color: #94a3b8;
-    }
-
-    .task-item.completed { color: #cbd5e1; }
-    .task-item.completed .task-check { color: #22c55e; font-weight: bold; }
-    .task-item.running { color: #eab308; }
-
-    /* Visual Diff Viewer in PermissionPrompt (src/ui/components/PermissionPrompt.tsx) */
-    .permission-prompt-box {
-      border: 1px solid #eab308;
-      border-radius: 8px;
-      padding: 0.75rem 1rem;
-      background: rgba(234, 179, 8, 0.04);
-      margin-bottom: 0.75rem;
-    }
-
-    .permission-header {
-      color: #eab308;
-      font-weight: 700;
-      font-size: 0.8rem;
-      margin-bottom: 0.4rem;
-    }
-
-    .diff-container {
-      background: #000;
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      border-radius: 6px;
-      padding: 0.5rem 0.75rem;
-      font-size: 0.78rem;
-      line-height: 1.35;
-      margin-bottom: 0.5rem;
-    }
-
-    .diff-del { color: #ef4444; }
-    .diff-add { color: #22c55e; }
-    .diff-hunk { color: #06b6d4; }
-    .diff-dim { color: #64748b; }
-
-    .permission-footer {
-      font-size: 0.75rem;
-      color: #94a3b8;
-    }
-
-    /* Command Palette Overlay (src/ui/components/CommandPalette.tsx) */
-    .command-palette-box {
-      border: 1px solid #06b6d4;
-      border-radius: 8px;
-      padding: 0.5rem 0.75rem;
-      background: #070d19;
-      margin-bottom: 0.5rem;
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
-    }
-
-    .command-palette-header {
-      display: flex;
-      justify-content: space-between;
-      font-size: 0.75rem;
-      color: #06b6d4;
-      font-weight: 700;
-      margin-bottom: 0.4rem;
-      border-bottom: 1px solid rgba(6, 182, 212, 0.2);
-      padding-bottom: 0.25rem;
-    }
-
-    .command-item {
-      display: flex;
-      justify-content: space-between;
-      font-size: 0.78rem;
-      padding: 0.2rem 0.35rem;
-      border-radius: 4px;
-    }
-
-    .command-item.selected {
-      background: rgba(6, 182, 212, 0.15);
-      color: #fff;
-    }
-
-    .cmd-name { color: #06b6d4; font-weight: 700; }
-    .command-item.selected .cmd-name { color: #67e8f9; }
-    .cmd-desc { color: #94a3b8; font-size: 0.74rem; }
-
-    /* Session Picker Overlay (src/ui/components/SessionPicker.tsx) */
-    .session-picker-box {
-      border: 1px solid #06b6d4;
-      border-radius: 8px;
-      padding: 0.6rem 0.85rem;
-      background: #070d19;
-      margin-bottom: 0.5rem;
-    }
-
-    /* InputBox (src/ui/components/InputBox.tsx) */
-    .input-box-container {
-      border: 1px solid rgba(255, 255, 255, 0.15);
-      border-radius: 8px;
-      padding: 0.55rem 0.85rem;
-      background: rgba(255, 255, 255, 0.02);
-      display: flex;
-      align-items: center;
-      gap: 0.6rem;
-      transition: all 0.2s;
-    }
-
-    .input-box-container:focus-within {
-      border-color: var(--primary);
-      box-shadow: 0 0 15px rgba(56, 189, 248, 0.25);
-    }
-
-    .input-box-container.active-cmd {
-      border-color: #06b6d4;
-    }
-
-    .input-prompt-symbol {
-      color: #38bdf8;
-      font-weight: 700;
-      font-size: 0.9rem;
-      user-select: none;
-    }
-
-    .real-terminal-input {
-      flex: 1;
-      background: transparent;
-      border: none;
-      outline: none;
-      color: #f8fafc;
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 0.82rem;
-    }
-    .real-terminal-input::placeholder {
-      color: #475569;
-    }
-
-    /* StatusBar (src/ui/components/StatusBar.tsx) */
-    .status-bar-container {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 0.45rem 0.2rem 0;
-      font-size: 0.74rem;
-      color: #64748b;
-      border-top: 1px solid rgba(255, 255, 255, 0.05);
-      margin-top: 0.4rem;
-    }
-
-    .status-mode-btn {
-      cursor: pointer;
-      font-weight: 700;
-      border: none;
-      background: transparent;
-      font-family: inherit;
-      padding: 0;
-    }
-    .status-mode-btn.code { color: #06b6d4; }
-    .status-mode-btn.plan { color: #d946ef; }
-    .status-mode-btn.auto { color: #22c55e; }
-
-    .status-tab-hint {
-      color: #eab308;
-      cursor: pointer;
-    }
-
-    /* Footer */
-    footer {
-      border-top: 1px solid var(--border);
-      padding: 0.65rem 0;
-      font-size: 0.74rem;
-      color: var(--text-sub);
-      text-align: center;
-      background: rgba(9, 13, 22, 0.8);
-      backdrop-filter: blur(8px);
-    }
-
-    footer a {
-      color: var(--text-muted);
-      text-decoration: none;
-      transition: color 0.2s;
-    }
-
-    footer a:hover {
-      color: var(--primary);
-    }
-
-    @media (max-width: 768px) {
-      nav { padding: 1rem; }
-      .app-screen { min-height: 440px; }
-      .install-box { flex-direction: column; width: 100%; text-align: center; }
-      .status-bar-container { flex-direction: column; gap: 0.3rem; align-items: flex-start; }
-    }
-  </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ruid — Standalone CLI Coding Agent for Any LLM</title>
+  <meta name="description" content="Ultra-fast, standalone CLI coding agent that works with any LLM provider — Anthropic, OpenAI, DeepSeek, Groq, Ollama, and local endpoints. Built for speed, precision, and privacy." />
+  <meta name="keywords" content="coding agent, AI CLI, terminal agent, developer tools, DeepSeek, Claude, OpenAI, Ollama, MCP protocol, autonomous agent" />
+  
+  <!-- Open Graph / Social Meta -->
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="ruid — Standalone CLI Coding Agent" />
+  <meta property="og:description" content="Connect to any LLM provider. Fast terminal coding agent with autonomous execution, architecture planning, and git rollback." />
+  <meta property="og:url" content="https://github.com/Theruid/ruidAgent" />
+  <meta name="twitter:card" content="summary_large_image" />
+  
+  <!-- Google Fonts: Inter & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet" />
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'monospace'],
+          },
+          colors: {
+            brand: {
+              50: '#eff6ff',
+              100: '#dbeafe',
+              400: '#60a5fa',
+              500: '#3b82f6',
+              600: '#2563eb',
+              700: '#1d4ed8',
+            },
+            surface: {
+              canvas: '#090a0f',
+              card: '#11131a',
+              elevated: '#171a24',
+              border: 'rgba(255, 255, 255, 0.08)',
+              borderFocus: 'rgba(59, 130, 246, 0.5)',
+            },
+            mode: {
+              code: '#10b981',
+              plan: '#3b82f6',
+              auto: '#f59e0b',
+            }
+          },
+          animation: {
+            'glow-pulse': 'glow 4s ease-in-out infinite alternate',
+            'float': 'float 6s ease-in-out infinite',
+            'scanline': 'scanline 8s linear infinite',
+          },
+          keyframes: {
+            glow: {
+              '0%': { opacity: '0.3', transform: 'scale(0.98)' },
+              '100%': { opacity: '0.6', transform: 'scale(1.02)' },
+            },
+            float: {
+              '0%, 100%': { transform: 'translateY(0px)' },
+              '50%': { transform: 'translateY(-8px)' },
+            },
+            scanline: {
+              '0%': { transform: 'translateY(-100%)' },
+              '100%': { transform: 'translateY(1000%)' },
+            }
+          }
+        }
+      }
+    };
+  </script>
+  
+  <link rel="stylesheet" href="styles.css" />
 </head>
-<body>
+<body class="bg-[#090a0f] text-slate-100 font-sans antialiased selection:bg-blue-500 selection:text-white relative overflow-x-hidden min-h-screen">
 
-  <div class="glow-bg"></div>
-  <div class="aurora-blob aurora-1"></div>
-  <div class="aurora-blob aurora-2"></div>
-  <div class="aurora-blob aurora-3"></div>
+  <!-- Background Ambient Glow & Grid -->
+  <div class="fixed inset-0 pointer-events-none z-0 overflow-hidden">
+    <div class="absolute -top-40 left-1/2 -translate-x-1/2 w-[800px] h-[500px] bg-gradient-to-tr from-blue-600/20 via-indigo-600/15 to-purple-600/10 rounded-full blur-[120px] animate-glow-pulse"></div>
+    <div class="absolute top-[600px] -left-40 w-[500px] h-[500px] bg-emerald-600/10 rounded-full blur-[100px]"></div>
+    <div class="absolute top-[1200px] -right-40 w-[600px] h-[600px] bg-amber-600/10 rounded-full blur-[120px]"></div>
+    <div class="absolute inset-0 bg-grid-pattern opacity-[0.04]"></div>
+  </div>
 
-  <!-- Navigation -->
-  <nav>
-    <div class="brand-wrap">
-      <a href="#" class="brand">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="color: var(--primary);"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>
-        <span>ruid</span>
+  <!-- Notification Banner / Release Tag -->
+  <aside aria-label="Latest Release Announcement" class="relative z-50 bg-gradient-to-r from-blue-900/40 via-purple-900/40 to-blue-900/40 border-b border-white/5 py-2 px-4 text-center text-xs font-medium text-slate-300">
+    <span class="inline-flex items-center gap-2">
+      <span class="bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded-full text-[11px] font-semibold border border-blue-500/30">v0.3.25 Released</span>
+      <span>Multi-model orchestration, Model Context Protocol (MCP) & Native Turn Rollbacks</span>
+      <a href="https://github.com/Theruid/ruidAgent/releases" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:text-blue-300 underline font-semibold ml-1 inline-flex items-center gap-1">
+        Changelog
+        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
       </a>
-      <div class="nav-bio">
-        Built by <strong>Theruid</strong> — an autonomous, model-agnostic coding agent for daily terminal workflows.
-      </div>
-    </div>
-    <div class="nav-right">
-      <a href="docs.html" class="btn-nav-action">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
-        <span>Docs</span>
-      </a>
-      <a href="https://github.com/Theruid/ruidAgent" target="_blank" rel="noopener noreferrer" class="btn-nav-action btn-nav-star">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>
-        <span>Star</span>
-      </a>
-      <a href="https://github.com/Theruid/ruidAgent" target="_blank" rel="noopener noreferrer" class="btn-nav-action">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
-        <span>GitHub</span>
-      </a>
-    </div>
-  </nav>
+    </span>
+  </aside>
 
-  <div class="container">
+  <!-- Sticky Glassmorphic Navigation -->
+  <header class="sticky top-0 z-40 backdrop-blur-xl bg-[#090a0f]/80 border-b border-white/10 transition-all duration-300" id="main-nav">
+    <nav class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between" aria-label="Main Navigation">
 
-    <!-- Centered Quick Install Bar -->
-    <div class="top-action-bar">
-      <div class="install-box">
-        <div class="install-command">
-          <span class="prompt">$</span><span>npm install -g @theruid/ruid</span>
+      <!-- Brand Logo -->
+      <a href="#" class="flex items-center gap-3 group focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-lg p-1">
+        <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 via-indigo-600 to-purple-600 p-[1px] shadow-lg shadow-blue-500/20">
+          <div class="w-full h-full bg-[#090a0f] rounded-[11px] flex items-center justify-center font-mono font-bold text-lg text-white group-hover:scale-95 transition-transform">
+            <span class="text-blue-400">&gt;</span>r
+          </div>
         </div>
-        <button class="btn-copy" onclick="copyInstall()">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-          <span id="copy-label">Copy</span>
+        <div class="flex flex-col">
+          <span class="font-bold text-lg tracking-tight text-white flex items-center gap-1.5">
+            ruid
+            <span class="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">CLI</span>
+          </span>
+        </div>
+      </a>
+
+      <!-- Desktop Navigation Links -->
+      <div class="hidden md:flex items-center gap-8 text-sm font-medium text-slate-300">
+        <a href="#modes" class="hover:text-white transition-colors">Operating Modes</a>
+        <a href="#features" class="hover:text-white transition-colors">Features</a>
+        <a href="#providers" class="hover:text-white transition-colors">LLM Providers</a>
+        <a href="#mcp" class="hover:text-white transition-colors">MCP Tools</a>
+        <a href="#benchmarks" class="hover:text-white transition-colors">Benchmarks</a>
+        <a href="#shortcuts" class="hover:text-white transition-colors">Shortcuts</a>
+        <a href="docs.html" class="hover:text-white transition-colors text-blue-400">Docs</a>
+      </div>
+
+      <!-- Quick Action CTA Buttons -->
+      <div class="hidden sm:flex items-center gap-3">
+        <a href="https://github.com/Theruid/ruidAgent" target="_blank" rel="noopener noreferrer" class="flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold text-slate-300 bg-white/5 border border-white/10 hover:bg-white/10 hover:text-white transition-all shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500" aria-label="Star ruid on GitHub">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+          <span>Star on GitHub</span>
+          <span class="bg-white/10 px-1.5 py-0.5 rounded text-[10px] text-slate-400 font-mono" id="github-stars">v0.3.25</span>
+        </a>
+        
+        <button type="button" class="copy-install-btn group relative flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold text-white bg-blue-600 hover:bg-blue-500 active:scale-95 transition-all shadow-lg shadow-blue-600/30 focus:outline-none focus:ring-2 focus:ring-blue-400" data-command="npm install -g @theruid/ruid">
+          <svg class="w-3.5 h-3.5 text-blue-200 group-hover:rotate-12 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+          <span>Install CLI</span>
         </button>
       </div>
+
+      <!-- Mobile Hamburger Button -->
+      <div class="flex md:hidden">
+        <button type="button" id="mobile-menu-btn" aria-label="Toggle navigation menu" aria-expanded="false" class="text-slate-400 hover:text-white p-2 rounded-lg bg-white/5 border border-white/10 focus:outline-none focus:ring-2 focus:ring-blue-500">
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7"></path></svg>
+        </button>
+      </div>
+    </nav>
+
+    <!-- Mobile Drawer Menu -->
+    <div id="mobile-menu" class="hidden md:hidden border-b border-white/10 bg-[#0c0e15] px-4 pt-2 pb-6 space-y-3">
+      <a href="#modes" class="block py-2 text-base font-medium text-slate-300 hover:text-white">Operating Modes</a>
+      <a href="#features" class="block py-2 text-base font-medium text-slate-300 hover:text-white">Features</a>
+      <a href="#providers" class="block py-2 text-base font-medium text-slate-300 hover:text-white">LLM Providers</a>
+      <a href="#mcp" class="block py-2 text-base font-medium text-slate-300 hover:text-white">MCP Tools</a>
+      <a href="#benchmarks" class="block py-2 text-base font-medium text-slate-300 hover:text-white">Benchmarks</a>
+      <a href="#shortcuts" class="block py-2 text-base font-medium text-slate-300 hover:text-white">Keyboard Shortcuts</a>
+      <a href="docs.html" class="block py-2 text-base font-medium text-blue-400 hover:text-blue-300">Documentation</a>
+      <div class="pt-4 flex flex-col gap-2">
+        <button type="button" class="copy-install-btn w-full py-2.5 rounded-lg text-sm font-semibold text-white bg-blue-600 hover:bg-blue-500 text-center shadow-lg" data-command="npm install -g @theruid/ruid">
+          Copy: npm install -g @theruid/ruid
+        </button>
+        <a href="https://github.com/Theruid/ruidAgent" target="_blank" rel="noopener noreferrer" class="w-full py-2.5 rounded-lg text-sm font-semibold text-slate-300 bg-white/5 border border-white/10 text-center hover:bg-white/10">
+          View on GitHub
+        </a>
+      </div>
     </div>
+  </header>
 
-    <!-- LIVE TERMINAL EMULATOR -->
-    <section class="demo-section" id="demo">
-      <div class="terminal-wrapper">
+  <main class="relative z-10">
 
-        <div class="terminal-window-header">
-          <div class="window-dots">
-            <span class="dot red"></span>
-            <span class="dot yellow"></span>
-            <span class="dot green"></span>
+    <!-- HERO SECTION -->
+    <section class="pt-16 pb-20 md:pt-24 md:pb-32 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto text-center" aria-labelledby="hero-title">
+      
+      <!-- Top Pill Tag -->
+      <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 border border-white/10 text-xs text-slate-300 backdrop-blur-md mb-8 hover:border-blue-500/50 transition-colors cursor-pointer group" id="pill-quick-tag">
+        <span class="flex h-2 w-2 relative">
+          <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+          <span class="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
+        </span>
+        <span class="font-medium">100% Standalone CLI</span>
+        <span class="text-slate-500">|</span>
+        <span class="text-blue-400 group-hover:underline">Works with Any LLM Provider</span>
+        <svg class="w-3 h-3 text-slate-400 group-hover:translate-x-0.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+      </div>
+
+      <!-- Main Headline -->
+      <h1 id="hero-title" class="text-4xl sm:text-6xl lg:text-7xl font-extrabold tracking-tight text-white max-w-5xl mx-auto leading-[1.08] mb-6">
+        The Autonomous Coding Agent <br class="hidden sm:inline" />
+        <span class="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-indigo-300 to-purple-400">
+          That Lives in Your Terminal.
+        </span>
+      </h1>
+
+      <!-- Subtitle -->
+      <p class="text-lg sm:text-xl text-slate-400 max-w-2xl mx-auto leading-relaxed mb-10 font-normal">
+        Build, refactor, debug, and plan across entire codebases. Connect directly to Anthropic, OpenAI, DeepSeek, Groq, or local Ollama instances with zero telemetry lock-in.
+      </p>
+
+      <!-- Instant Install Bar -->
+      <div class="flex flex-col sm:flex-row items-center justify-center gap-4 max-w-xl mx-auto mb-14">
+        <div class="w-full sm:w-auto flex-1 flex items-center justify-between bg-black/60 border border-white/15 rounded-xl px-4 py-3 font-mono text-sm shadow-2xl backdrop-blur-xl group hover:border-blue-500/50 transition-colors">
+          <div class="flex items-center gap-3 overflow-x-auto py-0.5 scrollbar-none">
+            <span class="text-blue-400 select-none font-bold">$</span>
+            <span class="text-slate-200 select-all font-medium whitespace-nowrap">npm install -g @theruid/ruid</span>
           </div>
-          <div class="window-title">ruid — terminal TUI</div>
-          <div style="font-size: 0.72rem; color: #64748b;">Press Tab in prompt to cycle mode</div>
+          <button type="button" class="copy-install-btn ml-3 p-1.5 rounded-lg bg-white/10 hover:bg-blue-600 text-slate-300 hover:text-white transition-all focus:outline-none focus:ring-2 focus:ring-blue-400" aria-label="Copy install command" data-command="npm install -g @theruid/ruid">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+          </button>
         </div>
 
-        <!-- Simulation Selector -->
-        <div class="scenario-tabs">
-          <button class="scenario-btn active" onclick="onUserSelectScenario('welcome')">◆ Initial Welcome</button>
-          <button class="scenario-btn" onclick="onUserSelectScenario('diff_fix')">🔍 Visual Diff & Approval</button>
-          <button class="scenario-btn" onclick="onUserSelectScenario('swarm')">⚡ Subagent Swarm Fleet</button>
-          <button class="scenario-btn" onclick="onUserSelectScenario('planning')">📋 Task Planning [PLAN]</button>
-          <button class="scenario-btn" onclick="onUserSelectScenario('sessions')">🔎 Session Search</button>
-          <button class="scenario-btn" onclick="onUserSelectScenario('slash_cmd')">⌨ Command Palette</button>
+        <a href="#interactive-demo" class="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl font-semibold text-sm text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 active:scale-95 transition-all shadow-xl shadow-blue-600/25">
+          <span>Try Interactive CLI</span>
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+        </a>
+      </div>
+
+      <!-- Quick Trust Indicators -->
+      <div class="flex flex-wrap items-center justify-center gap-6 sm:gap-10 text-xs font-mono text-slate-400 uppercase tracking-wider">
+        <div class="flex items-center gap-2">
+          <svg class="w-4 h-4 text-emerald-400" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path></svg>
+          <span>Apache 2.0 Open Source</span>
         </div>
+        <div class="flex items-center gap-2">
+          <svg class="w-4 h-4 text-emerald-400" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path></svg>
+          <span>Zero Telemetry / 100% Private</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <svg class="w-4 h-4 text-emerald-400" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path></svg>
+          <span>Sub-180ms Startup</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <svg class="w-4 h-4 text-emerald-400" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path></svg>
+          <span>Model Context Protocol (MCP)</span>
+        </div>
+      </div>
 
-        <!-- Real TUI Terminal Frame -->
-        <div class="app-screen" id="app-screen">
+      <!-- INTERACTIVE TERMINAL SIMULATOR -->
+      <div id="interactive-demo" class="mt-16 text-left max-w-5xl mx-auto">
+        <div class="relative rounded-2xl bg-[#0d1017] border border-white/15 shadow-2xl shadow-black/80 overflow-hidden ring-1 ring-white/10">
+          
+          <!-- Terminal Header Bar -->
+          <div class="bg-[#161a24] px-4 py-3 border-b border-white/10 flex flex-wrap items-center justify-between gap-3 select-none">
+            <!-- Window Controls -->
+            <div class="flex items-center gap-2">
+              <div class="w-3 h-3 rounded-full bg-red-500/80"></div>
+              <div class="w-3 h-3 rounded-full bg-yellow-500/80"></div>
+              <div class="w-3 h-3 rounded-full bg-green-500/80"></div>
+              <span class="ml-2 font-mono text-xs text-slate-400 font-medium">ruid v0.3.25 — coding agent session</span>
+            </div>
 
-          <!-- Top Area: Messages / Welcome / Dynamic Elements -->
-          <div id="screen-body" style="flex: 1; display: flex; flex-direction: column; justify-content: flex-start;">
-            <!-- Rendered by JS -->
+            <!-- Interactive Mode Pill Switcher -->
+            <div class="flex items-center bg-black/40 p-1 rounded-lg border border-white/10 text-xs font-mono" role="tablist" aria-label="Operating Mode Selector">
+              <button type="button" role="tab" aria-selected="true" data-mode="code" class="terminal-tab active px-3 py-1 rounded-md font-semibold text-emerald-400 bg-emerald-950/60 border border-emerald-500/30 transition-all flex items-center gap-1.5 focus:outline-none">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                <span>[CODE]</span>
+              </button>
+              <button type="button" role="tab" aria-selected="false" data-mode="plan" class="terminal-tab px-3 py-1 rounded-md font-semibold text-slate-400 hover:text-blue-400 transition-all flex items-center gap-1.5 focus:outline-none">
+                <span class="w-1.5 h-1.5 rounded-full bg-blue-400"></span>
+                <span>[PLAN]</span>
+              </button>
+              <button type="button" role="tab" aria-selected="false" data-mode="auto" class="terminal-tab px-3 py-1 rounded-md font-semibold text-slate-400 hover:text-amber-400 transition-all flex items-center gap-1.5 focus:outline-none">
+                <span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+                <span>[AUTO]</span>
+              </button>
+            </div>
+
+            <!-- Active Provider Badge -->
+            <div class="hidden sm:flex items-center gap-2 font-mono text-xs text-slate-400">
+              <span class="text-slate-500">Provider:</span>
+              <span class="text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/20" id="terminal-active-model">Claude 3.7 Sonnet</span>
+            </div>
           </div>
 
-          <!-- Dynamic Middle Components: TaskPanel & PermissionPrompt -->
-          <div id="dynamic-panels"></div>
+          <!-- Terminal Body & Transcript -->
+          <div class="p-6 font-mono text-xs sm:text-sm leading-relaxed min-h-[380px] max-h-[520px] overflow-y-auto bg-[#0a0c12]" id="terminal-screen" tabindex="0" aria-label="Interactive Terminal Output">
+            <!-- Dynamic terminal content rendered by script.js -->
+          </div>
 
-          <!-- Bottom Area: CommandPalette + InputBox + StatusBar -->
-          <div id="bottom-bar-area">
+          <!-- Terminal Input Footer Simulation -->
+          <div class="bg-[#12151f] px-4 py-3 border-t border-white/10 flex items-center justify-between text-xs font-mono text-slate-400">
+            <div class="flex items-center gap-2">
+              <span class="text-emerald-400 font-bold" id="terminal-prompt-mode">[CODE]</span>
+              <span class="text-blue-400">ruid&gt;</span>
+              <span class="text-slate-200" id="terminal-active-command">Refactor database adapter with connection pooling</span>
+              <span class="w-2 h-4 bg-blue-400 inline-block animate-pulse"></span>
+            </div>
+            <div class="hidden md:flex items-center gap-4 text-[11px] text-slate-500">
+              <span>Press <kbd class="px-1.5 py-0.5 bg-white/10 text-slate-300 rounded border border-white/10 font-mono">Tab</kbd> to switch mode</span>
+              <span><kbd class="px-1.5 py-0.5 bg-white/10 text-slate-300 rounded border border-white/10 font-mono">/rollback</kbd> undoes turn</span>
+            </div>
+          </div>
+        </div>
 
-            <!-- Command Palette Container (appears when typing /) -->
-            <div id="command-palette-container" style="display: none;"></div>
+        <!-- Terminal Sub-bar Controls -->
+        <div class="mt-4 flex flex-wrap items-center justify-between text-xs text-slate-400 px-2">
+          <div class="flex items-center gap-4">
+            <button type="button" id="btn-replay-demo" class="hover:text-white flex items-center gap-1.5 text-blue-400 font-medium">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+              <span>Replay Simulation</span>
+            </button>
+            <span class="text-slate-600">|</span>
+            <span class="text-slate-400">Click tabs above to test <code>[CODE]</code>, <code>[PLAN]</code>, or <code>[AUTO]</code> execution</span>
+          </div>
+          <div class="text-slate-500 font-mono">
+            Zero-delay local execution
+          </div>
+        </div>
 
-            <!-- Input Box (src/ui/components/InputBox.tsx) -->
-            <div class="input-box-container" id="input-box-wrapper">
-              <span class="input-prompt-symbol">&gt;</span>
-              <input
-                type="text"
-                class="real-terminal-input"
-                id="real-terminal-input"
-                placeholder="Ask in [CODE] mode… (Tab: mode, Ctrl+Enter: newline, @file, /help)"
-                onkeydown="onInputKey(event)"
-                oninput="onInputChange(event)"
-                autocomplete="off"
-                spellcheck="false"
-              >
+      </div>
+
+    </section>
+
+    <!-- SECTION: THE THREE OPERATING MODES -->
+    <section id="modes" class="py-24 border-t border-white/10 bg-[#0c0e15] relative" aria-labelledby="modes-title">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        
+        <div class="text-center max-w-3xl mx-auto mb-16">
+          <span class="text-xs font-mono uppercase tracking-widest text-blue-400 font-bold bg-blue-500/10 px-3 py-1 rounded-full border border-blue-500/20">
+            Control & Autonomy Matrix
+          </span>
+          <h2 id="modes-title" class="text-3xl sm:text-5xl font-extrabold text-white mt-4 tracking-tight">
+            Three Specialized Modes.<br />Complete Developer Control.
+          </h2>
+          <p class="mt-4 text-base sm:text-lg text-slate-400">
+            Cycle effortlessly between safe human-in-the-loop review, zero-mutation architectural planning, and high-velocity autonomous execution.
+          </p>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+          
+          <!-- Mode 1: CODE -->
+          <div class="relative rounded-2xl bg-[#11141d] border border-emerald-500/30 p-8 shadow-xl hover:border-emerald-500/60 transition-all group flex flex-col justify-between">
+            <div class="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 rounded-bl-full pointer-events-none"></div>
+            <div>
+              <div class="flex items-center justify-between mb-6">
+                <span class="font-mono text-sm font-bold text-emerald-400 bg-emerald-950/80 px-3 py-1 rounded-lg border border-emerald-500/40">
+                  [CODE] MODE
+                </span>
+                <span class="text-xs font-mono text-slate-400">Default Safe</span>
+              </div>
+              <h3 class="text-xl font-bold text-white mb-3 group-hover:text-emerald-400 transition-colors">
+                Human-in-the-Loop Safe Execution
+              </h3>
+              <p class="text-sm text-slate-400 leading-relaxed mb-6">
+                Read-only tools (grep, glob, read_file) run automatically. Any file writes, shell commands, or destructive actions prompt for human confirmation (<kbd class="px-1 bg-white/10 rounded text-slate-300">y</kbd>/<kbd class="px-1 bg-white/10 rounded text-slate-300">n</kbd>/<kbd class="px-1 bg-white/10 rounded text-slate-300">a</kbd>).
+              </p>
+              <ul class="space-y-2.5 text-xs text-slate-300 font-mono mb-8">
+                <li class="flex items-center gap-2">
+                  <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                  <span>Auto-approves read & search tools</span>
+                </li>
+                <li class="flex items-center gap-2">
+                  <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                  <span>Interactive diff preview on write</span>
+                </li>
+                <li class="flex items-center gap-2">
+                  <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                  <span>Instant git turn snapshots</span>
+                </li>
+              </ul>
+            </div>
+            <div class="pt-4 border-t border-white/10 font-mono text-xs text-slate-400 flex items-center justify-between">
+              <span>Best for:</span>
+              <span class="text-slate-200">Daily engineering & refactoring</span>
+            </div>
+          </div>
+
+          <!-- Mode 2: PLAN -->
+          <div class="relative rounded-2xl bg-[#11141d] border border-blue-500/30 p-8 shadow-xl hover:border-blue-500/60 transition-all group flex flex-col justify-between">
+            <div class="absolute top-0 right-0 w-32 h-32 bg-blue-500/10 rounded-bl-full pointer-events-none"></div>
+            <div>
+              <div class="flex items-center justify-between mb-6">
+                <span class="font-mono text-sm font-bold text-blue-400 bg-blue-950/80 px-3 py-1 rounded-lg border border-blue-500/40">
+                  [PLAN] MODE
+                </span>
+                <span class="text-xs font-mono text-slate-400">Architect</span>
+              </div>
+              <h3 class="text-xl font-bold text-white mb-3 group-hover:text-blue-400 transition-colors">
+                Read-Only Architecture & Planning
+              </h3>
+              <p class="text-sm text-slate-400 leading-relaxed mb-6">
+                Zero mutations allowed. The agent traverses complex dependency graphs, reads documentation, decomposes epic user stories into atomic tasks, and generates comprehensive plans.
+              </p>
+              <ul class="space-y-2.5 text-xs text-slate-300 font-mono mb-8">
+                <li class="flex items-center gap-2">
+                  <svg class="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                  <span>All file modification disabled</span>
+                </li>
+                <li class="flex items-center gap-2">
+                  <svg class="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                  <span>Interactive Task Tracking (/tasks)</span>
+                </li>
+                <li class="flex items-center gap-2">
+                  <svg class="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                  <span>Design spec & RFC generation</span>
+                </li>
+              </ul>
+            </div>
+            <div class="pt-4 border-t border-white/10 font-mono text-xs text-slate-400 flex items-center justify-between">
+              <span>Best for:</span>
+              <span class="text-slate-200">System design & code audits</span>
+            </div>
+          </div>
+
+          <!-- Mode 3: AUTO -->
+          <div class="relative rounded-2xl bg-[#11141d] border border-amber-500/30 p-8 shadow-xl hover:border-amber-500/60 transition-all group flex flex-col justify-between">
+            <div class="absolute top-0 right-0 w-32 h-32 bg-amber-500/10 rounded-bl-full pointer-events-none"></div>
+            <div>
+              <div class="flex items-center justify-between mb-6">
+                <span class="font-mono text-sm font-bold text-amber-400 bg-amber-950/80 px-3 py-1 rounded-lg border border-amber-500/40">
+                  [AUTO] MODE
+                </span>
+                <span class="text-xs font-mono text-slate-400">Autonomous</span>
+              </div>
+              <h3 class="text-xl font-bold text-white mb-3 group-hover:text-amber-400 transition-colors">
+                High-Velocity Autonomous Execution
+              </h3>
+              <p class="text-sm text-slate-400 leading-relaxed mb-6">
+                Unrestricted agent iteration loop. Auto-executes multi-file creations, runs test suites, reads compiler errors, and self-corrects until all criteria are met.
+              </p>
+              <ul class="space-y-2.5 text-xs text-slate-300 font-mono mb-8">
+                <li class="flex items-center gap-2">
+                  <svg class="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                  <span>Pre-approved execution loop</span>
+                </li>
+                <li class="flex items-center gap-2">
+                  <svg class="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                  <span>Automatic build & test healing</span>
+                </li>
+                <li class="flex items-center gap-2">
+                  <svg class="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                  <span>Tier-4 sensitive guards (.env safety)</span>
+                </li>
+              </ul>
+            </div>
+            <div class="pt-4 border-t border-white/10 font-mono text-xs text-slate-400 flex items-center justify-between">
+              <span>Best for:</span>
+              <span class="text-slate-200">Rapid prototypes & bug squashing</span>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION: CORE FEATURES & ARCHITECTURE -->
+    <section id="features" class="py-24 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8" aria-labelledby="features-title">
+      
+      <div class="text-center max-w-3xl mx-auto mb-20">
+        <span class="text-xs font-mono uppercase tracking-widest text-indigo-400 font-bold bg-indigo-500/10 px-3 py-1 rounded-full border border-indigo-500/20">
+          Engineered for Power Users
+        </span>
+        <h2 id="features-title" class="text-3xl sm:text-5xl font-extrabold text-white mt-4 tracking-tight">
+          Everything You Need.<br />Nothing You Don't.
+        </h2>
+        <p class="mt-4 text-base sm:text-lg text-slate-400">
+          No heavy Electron wrappers. No hidden cloud subscriptions. Just pure, blistering CLI performance.
+        </p>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+        
+        <!-- Feature 1: Subagent Parallelism -->
+        <div class="p-8 rounded-2xl bg-[#11141d] border border-white/10 hover:border-blue-500/40 transition-all group">
+          <div class="w-12 h-12 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400 mb-6 group-hover:scale-110 transition-transform">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+          </div>
+          <h3 class="text-lg font-bold text-white mb-2">Parallel Subagent Orchestration</h3>
+          <p class="text-sm text-slate-400 leading-relaxed">
+            Spawn concurrent worker agents in isolated Git worktrees to audit modules, implement components, and run test suites concurrently.
+          </p>
+        </div>
+
+        <!-- Feature 2: Git Turn Rollback -->
+        <div class="p-8 rounded-2xl bg-[#11141d] border border-white/10 hover:border-emerald-500/40 transition-all group">
+          <div class="w-12 h-12 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 mb-6 group-hover:scale-110 transition-transform">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12.066 11.2a1 1 0 000 1.6l5.334 4A1 1 0 0019 16V8a1 1 0 00-1.6-.8l-5.334 4zM4.066 11.2a1 1 0 000 1.6l5.334 4A1 1 0 0011 16V8a1 1 0 00-1.6-.8l-5.334 4z"></path></svg>
+          </div>
+          <h3 class="text-lg font-bold text-white mb-2">Granular Git Turn Rollback</h3>
+          <p class="text-sm text-slate-400 leading-relaxed">
+            Every agent action creates an atomic snapshot. Run <code class="text-emerald-400">/rollback [turn]</code> to immediately restore your working tree to any point in the conversation.
+          </p>
+        </div>
+
+        <!-- Feature 3: Model Context Protocol -->
+        <div class="p-8 rounded-2xl bg-[#11141d] border border-white/10 hover:border-purple-500/40 transition-all group">
+          <div class="w-12 h-12 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400 mb-6 group-hover:scale-110 transition-transform">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+          </div>
+          <h3 class="text-lg font-bold text-white mb-2">Native MCP Tool Extensibility</h3>
+          <p class="text-sm text-slate-400 leading-relaxed">
+            Plug into the Model Context Protocol ecosystem. Connect Upstash Context7, Memory servers, Postgres databases, or custom tools via simple JSON config.
+          </p>
+        </div>
+
+        <!-- Feature 4: Custom Skills & Workflows -->
+        <div class="p-8 rounded-2xl bg-[#11141d] border border-white/10 hover:border-pink-500/40 transition-all group">
+          <div class="w-12 h-12 rounded-xl bg-pink-500/10 border border-pink-500/20 flex items-center justify-center text-pink-400 mb-6 group-hover:scale-110 transition-transform">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+          </div>
+          <h3 class="text-lg font-bold text-white mb-2">Reusable Skills Engine</h3>
+          <p class="text-sm text-slate-400 leading-relaxed">
+            Execute custom prompt templates and domain workflows in <code class="text-pink-400">.ruid/skills/</code>. Invoke with <code class="text-slate-200">/design</code>, <code class="text-slate-200">/review</code>, or <code class="text-slate-200">/ux-audit</code>.
+          </p>
+        </div>
+
+        <!-- Feature 5: Pre & Post Tool Hooks -->
+        <div class="p-8 rounded-2xl bg-[#11141d] border border-white/10 hover:border-amber-500/40 transition-all group">
+          <div class="w-12 h-12 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 mb-6 group-hover:scale-110 transition-transform">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path></svg>
+          </div>
+          <h3 class="text-lg font-bold text-white mb-2">Pre/Post Tool Execution Hooks</h3>
+          <p class="text-sm text-slate-400 leading-relaxed">
+            Run automated linters, formatters (Prettier, Biome, ESLint), or security scanners before and after every file mutation with zero manual intervention.
+          </p>
+        </div>
+
+        <!-- Feature 6: Local & Private First -->
+        <div class="p-8 rounded-2xl bg-[#11141d] border border-white/10 hover:border-teal-500/40 transition-all group">
+          <div class="w-12 h-12 rounded-xl bg-teal-500/10 border border-teal-500/20 flex items-center justify-center text-teal-400 mb-6 group-hover:scale-110 transition-transform">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
+          </div>
+          <h3 class="text-lg font-bold text-white mb-2">100% Air-Gapped & Private</h3>
+          <p class="text-sm text-slate-400 leading-relaxed">
+            Your proprietary source code stays on your machine. Pair with Ollama or local vLLM instances for zero internet dependency and total compliance.
+          </p>
+        </div>
+
+      </div>
+
+    </section>
+
+    <!-- SECTION: PROVIDER FREEDOM -->
+    <section id="providers" class="py-24 border-t border-white/10 bg-[#0c0e15] relative" aria-labelledby="providers-title">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        
+        <div class="text-center max-w-3xl mx-auto mb-16">
+          <span class="text-xs font-mono uppercase tracking-widest text-emerald-400 font-bold bg-emerald-500/10 px-3 py-1 rounded-full border border-emerald-500/20">
+            Zero Vendor Lock-in
+          </span>
+          <h2 id="providers-title" class="text-3xl sm:text-5xl font-extrabold text-white mt-4 tracking-tight">
+            Bring Any Model. Switch in Seconds.
+          </h2>
+          <p class="mt-4 text-base sm:text-lg text-slate-400">
+            Configure once with <code class="text-emerald-400">/setup</code> or <code class="text-slate-200">ruid setup</code> and switch effortlessly between cloud leaders and local inference.
+          </p>
+        </div>
+
+        <!-- Provider Badges Grid -->
+        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 max-w-4xl mx-auto mb-12">
+          
+          <div class="p-4 rounded-xl bg-[#11141d] border border-white/10 flex items-center gap-3.5 hover:border-blue-500/40 transition-colors">
+            <div class="w-8 h-8 rounded-lg bg-orange-500/20 text-orange-400 flex items-center justify-center font-bold font-mono text-xs">An</div>
+            <div>
+              <div class="text-sm font-semibold text-white">Anthropic</div>
+              <div class="text-xs text-slate-400">Claude 3.7 Sonnet / Opus</div>
+            </div>
+          </div>
+
+          <div class="p-4 rounded-xl bg-[#11141d] border border-white/10 flex items-center gap-3.5 hover:border-blue-500/40 transition-colors">
+            <div class="w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold font-mono text-xs">OA</div>
+            <div>
+              <div class="text-sm font-semibold text-white">OpenAI</div>
+              <div class="text-xs text-slate-400">GPT-4o / o3-mini</div>
+            </div>
+          </div>
+
+          <div class="p-4 rounded-xl bg-[#11141d] border border-white/10 flex items-center gap-3.5 hover:border-blue-500/40 transition-colors">
+            <div class="w-8 h-8 rounded-lg bg-blue-500/20 text-blue-400 flex items-center justify-center font-bold font-mono text-xs">DS</div>
+            <div>
+              <div class="text-sm font-semibold text-white">DeepSeek</div>
+              <div class="text-xs text-slate-400">DeepSeek-V3 / R1</div>
+            </div>
+          </div>
+
+          <div class="p-4 rounded-xl bg-[#11141d] border border-white/10 flex items-center gap-3.5 hover:border-blue-500/40 transition-colors">
+            <div class="w-8 h-8 rounded-lg bg-red-500/20 text-red-400 flex items-center justify-center font-bold font-mono text-xs">Gq</div>
+            <div>
+              <div class="text-sm font-semibold text-white">Groq</div>
+              <div class="text-xs text-slate-400">Ultra-fast Llama 3.3</div>
+            </div>
+          </div>
+
+          <div class="p-4 rounded-xl bg-[#11141d] border border-white/10 flex items-center gap-3.5 hover:border-blue-500/40 transition-colors">
+            <div class="w-8 h-8 rounded-lg bg-yellow-500/20 text-yellow-400 flex items-center justify-center font-bold font-mono text-xs">Ol</div>
+            <div>
+              <div class="text-sm font-semibold text-white">Ollama</div>
+              <div class="text-xs text-slate-400">Local localhost:11434</div>
+            </div>
+          </div>
+
+          <div class="p-4 rounded-xl bg-[#11141d] border border-white/10 flex items-center gap-3.5 hover:border-blue-500/40 transition-colors">
+            <div class="w-8 h-8 rounded-lg bg-indigo-500/20 text-indigo-400 flex items-center justify-center font-bold font-mono text-xs">OR</div>
+            <div>
+              <div class="text-sm font-semibold text-white">OpenRouter</div>
+              <div class="text-xs text-slate-400">Any model gateway</div>
+            </div>
+          </div>
+
+          <div class="p-4 rounded-xl bg-[#11141d] border border-white/10 flex items-center gap-3.5 hover:border-blue-500/40 transition-colors">
+            <div class="w-8 h-8 rounded-lg bg-purple-500/20 text-purple-400 flex items-center justify-center font-bold font-mono text-xs">LM</div>
+            <div>
+              <div class="text-sm font-semibold text-white">LM Studio</div>
+              <div class="text-xs text-slate-400">Local GUI server</div>
+            </div>
+          </div>
+
+          <div class="p-4 rounded-xl bg-[#11141d] border border-white/10 flex items-center gap-3.5 hover:border-blue-500/40 transition-colors">
+            <div class="w-8 h-8 rounded-lg bg-teal-500/20 text-teal-400 flex items-center justify-center font-bold font-mono text-xs">API</div>
+            <div>
+              <div class="text-sm font-semibold text-white">Custom Endpoint</div>
+              <div class="text-xs text-slate-400">OpenAI compatible</div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Provider Switcher CLI Snippet Box -->
+        <div class="max-w-2xl mx-auto rounded-xl bg-[#090b10] border border-white/10 p-4 font-mono text-xs">
+          <div class="flex items-center justify-between text-slate-400 mb-2 pb-2 border-b border-white/5">
+            <span>Provider Switching in CLI</span>
+            <span class="text-emerald-400">Instant</span>
+          </div>
+          <div class="space-y-1 text-slate-300">
+            <p><span class="text-blue-400">ruid&gt;</span> /connect deepseek</p>
+            <p class="text-emerald-400">✔ Connected to DeepSeek (model: deepseek-chat)</p>
+            <p><span class="text-blue-400">ruid&gt;</span> /connect ollama</p>
+            <p class="text-emerald-400">✔ Connected to Ollama (model: qwen2.5-coder:32b)</p>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- SECTION: MODEL CONTEXT PROTOCOL (MCP) ECOSYSTEM -->
+    <section id="mcp" class="py-24 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8" aria-labelledby="mcp-title">
+      
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
+        
+        <div class="lg:col-span-6">
+          <span class="text-xs font-mono uppercase tracking-widest text-purple-400 font-bold bg-purple-500/10 px-3 py-1 rounded-full border border-purple-500/20">
+            Open Standard Extensibility
+          </span>
+          <h2 id="mcp-title" class="text-3xl sm:text-5xl font-extrabold text-white mt-4 tracking-tight leading-tight">
+            Connect MCP Servers & Expand Agent Capabilities.
+          </h2>
+          <p class="mt-4 text-base sm:text-lg text-slate-400 leading-relaxed">
+            <code>ruid</code> natively implements Anthropic's Model Context Protocol. Give your agent superpowers: persistent multi-session memory, live web documentation lookup via Context7, database introspection, or proprietary APIs.
+          </p>
+
+          <div class="mt-8 space-y-4 font-mono text-xs">
+            <div class="flex items-start gap-3 p-3 rounded-lg bg-white/5 border border-white/10">
+              <span class="text-purple-400 font-bold text-base">01</span>
+              <div>
+                <div class="text-white font-semibold text-sm font-sans">Persistent Memory Server</div>
+                <div class="text-slate-400 mt-0.5">Retain architectural decisions, project conventions, and user preferences across coding sessions.</div>
+              </div>
             </div>
 
-            <!-- StatusBar (src/ui/components/StatusBar.tsx) -->
-            <div class="status-bar-container">
+            <div class="flex items-start gap-3 p-3 rounded-lg bg-white/5 border border-white/10">
+              <span class="text-purple-400 font-bold text-base">02</span>
               <div>
-                <button class="status-mode-btn code" id="status-mode-pill" onclick="cycleMode()">[CODE]</button>
-                <span id="status-provider-text"> anthropic · claude-3-7-sonnet</span>
-              </div>
-              <div id="status-usage-text">
-                3.4k in (2.1k cached) · 850 out · ~$0.01 · 1.2s
-              </div>
-              <div>
-                <span id="status-spin" style="display: none;">⠋ </span>
-                <span id="status-mcp-indicator" style="color: #38bdf8;">⚡ 2 MCP · </span>
-                <span id="status-task-indicator"></span>
-                <span id="status-msg-count">2 msgs</span> ·
-                <span class="status-tab-hint" onclick="cycleMode()">Tab: mode</span>
+                <div class="text-white font-semibold text-sm font-sans">Live Documentation Search (Context7)</div>
+                <div class="text-slate-400 mt-0.5">Fetches current, version-accurate documentation for Next.js 15, React 19, Tailwind, and NPM packages.</div>
               </div>
             </div>
 
+            <div class="flex items-start gap-3 p-3 rounded-lg bg-white/5 border border-white/10">
+              <span class="text-purple-400 font-bold text-base">03</span>
+              <div>
+                <div class="text-white font-semibold text-sm font-sans">Zero Boilerplate Configuration</div>
+                <div class="text-slate-400 mt-0.5">Defined simply in <code class="text-purple-300">~/.ruid/config.json</code> under the standard <code>mcpServers</code> schema.</div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- MCP Config JSON Code Block -->
+        <div class="lg:col-span-6">
+          <div class="rounded-2xl bg-[#090b10] border border-purple-500/30 shadow-2xl overflow-hidden">
+            <div class="bg-[#12141c] px-4 py-3 border-b border-white/10 flex items-center justify-between">
+              <div class="flex items-center gap-2 font-mono text-xs text-slate-300">
+                <span class="w-2.5 h-2.5 rounded-full bg-purple-500"></span>
+                <span>~/.ruid/config.json (MCP Configuration)</span>
+              </div>
+              <button type="button" class="copy-install-btn text-xs text-slate-400 hover:text-white" data-command='{\n  "mcpServers": {\n    "memory": {\n      "command": "npx",\n      "args": ["-y", "@modelcontextprotocol/server-memory"]\n    },\n    "context7": {\n      "command": "npx",\n      "args": ["-y", "@upstash/context7-mcp"]\n    }\n  }\n}'>
+                Copy JSON
+              </button>
+            </div>
+            <pre class="p-6 font-mono text-xs sm:text-sm text-slate-300 leading-relaxed overflow-x-auto"><code>{
+  <span class="text-purple-400">"mcpServers"</span>: {
+    <span class="text-blue-400">"memory"</span>: {
+      <span class="text-amber-300">"command"</span>: <span class="text-emerald-300">"npx"</span>,
+      <span class="text-amber-300">"args"</span>: [<span class="text-emerald-300">"-y"</span>, <span class="text-emerald-300">"@modelcontextprotocol/server-memory"</span>]
+    },
+    <span class="text-blue-400">"context7"</span>: {
+      <span class="text-amber-300">"command"</span>: <span class="text-emerald-300">"npx"</span>,
+      <span class="text-amber-300">"args"</span>: [<span class="text-emerald-300">"-y"</span>, <span class="text-emerald-300">"@upstash/context7-mcp"</span>]
+    }
+  }
+}</code></pre>
+          </div>
+        </div>
+
+      </div>
+
+    </section>
+
+    <!-- SECTION: BENCHMARKS & PERFORMANCE COMPARISON -->
+    <section id="benchmarks" class="py-24 border-t border-white/10 bg-[#0c0e15]" aria-labelledby="benchmark-title">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        
+        <div class="text-center max-w-3xl mx-auto mb-16">
+          <span class="text-xs font-mono uppercase tracking-widest text-amber-400 font-bold bg-amber-500/10 px-3 py-1 rounded-full border border-amber-500/20">
+            Blistering Velocity
+          </span>
+          <h2 id="benchmark-title" class="text-3xl sm:text-5xl font-extrabold text-white mt-4 tracking-tight">
+            Built for Raw Terminal Speed
+          </h2>
+          <p class="mt-4 text-base sm:text-lg text-slate-400">
+            Why wait 5 seconds for bloated Electron shells to boot when you can start in 180 milliseconds?
+          </p>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse rounded-2xl overflow-hidden bg-[#11141d] border border-white/10">
+            <thead>
+              <tr class="bg-[#161a26] border-b border-white/10 text-xs font-mono text-slate-400 uppercase">
+                <th class="py-4 px-6">Metric / Capability</th>
+                <th class="py-4 px-6 text-blue-400 font-bold bg-blue-500/10">ruid CLI (@theruid/ruid)</th>
+                <th class="py-4 px-6">Heavy AI IDEs</th>
+                <th class="py-4 px-6">Vendor-Locked Web Agents</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5 text-sm">
+              <tr>
+                <td class="py-4 px-6 font-medium text-white">Cold Startup Time</td>
+                <td class="py-4 px-6 font-mono text-emerald-400 font-bold bg-blue-500/5">&lt; 180 ms</td>
+                <td class="py-4 px-6 font-mono text-slate-400">4,200 ms</td>
+                <td class="py-4 px-6 font-mono text-slate-400">2,500 ms</td>
+              </tr>
+              <tr>
+                <td class="py-4 px-6 font-medium text-white">Memory Footprint</td>
+                <td class="py-4 px-6 font-mono text-emerald-400 font-bold bg-blue-500/5">~ 42 MB (Ink/Node)</td>
+                <td class="py-4 px-6 font-mono text-slate-400">&gt; 1,200 MB</td>
+                <td class="py-4 px-6 font-mono text-slate-400">&gt; 650 MB</td>
+              </tr>
+              <tr>
+                <td class="py-4 px-6 font-medium text-white">LLM Provider Support</td>
+                <td class="py-4 px-6 font-mono text-emerald-400 font-bold bg-blue-500/5">Any (Cloud + Ollama / Local)</td>
+                <td class="py-4 px-6 font-mono text-slate-400">Restricted / Proprietary</td>
+                <td class="py-4 px-6 font-mono text-slate-400">Vendor Locked</td>
+              </tr>
+              <tr>
+                <td class="py-4 px-6 font-medium text-white">Granular Turn Rollbacks</td>
+                <td class="py-4 px-6 font-mono text-emerald-400 font-bold bg-blue-500/5">Native (/rollback)</td>
+                <td class="py-4 px-6 font-mono text-slate-400">Manual Git only</td>
+                <td class="py-4 px-6 font-mono text-slate-400">Partial / None</td>
+              </tr>
+              <tr>
+                <td class="py-4 px-6 font-medium text-white">Model Context Protocol (MCP)</td>
+                <td class="py-4 px-6 font-mono text-emerald-400 font-bold bg-blue-500/5">Native 1-Click JSON config</td>
+                <td class="py-4 px-6 font-mono text-slate-400">Plugin Dependent</td>
+                <td class="py-4 px-6 font-mono text-slate-400">Unsupported</td>
+              </tr>
+              <tr>
+                <td class="py-4 px-6 font-medium text-white">Telemetry & Data Sharing</td>
+                <td class="py-4 px-6 font-mono text-emerald-400 font-bold bg-blue-500/5">0% Telemetry (Private)</td>
+                <td class="py-4 px-6 font-mono text-slate-400">Mandatory Cloud Telemetry</td>
+                <td class="py-4 px-6 font-mono text-slate-400">Full Cloud Logging</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- SECTION: KEYBOARD SHORTCUTS CHEAT SHEET -->
+    <section id="shortcuts" class="py-24 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8" aria-labelledby="shortcuts-title">
+      
+      <div class="text-center max-w-3xl mx-auto mb-16">
+        <span class="text-xs font-mono uppercase tracking-widest text-blue-400 font-bold bg-blue-500/10 px-3 py-1 rounded-full border border-blue-500/20">
+          Terminal Ergonomics
+        </span>
+        <h2 id="shortcuts-title" class="text-3xl sm:text-5xl font-extrabold text-white mt-4 tracking-tight">
+          Keyboard-First Workflow
+        </h2>
+        <p class="mt-4 text-base sm:text-lg text-slate-400">
+          Never take your hands off the keyboard. Fluid interactions designed for developers who code at the speed of thought.
+        </p>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 font-mono text-sm">
+        
+        <div class="p-5 rounded-xl bg-[#11141d] border border-white/10 flex items-center justify-between">
+          <div class="text-slate-300 font-sans text-sm">Cycle Operating Modes</div>
+          <kbd class="px-2.5 py-1 bg-white/10 text-blue-400 rounded-md border border-white/15 font-bold">Tab</kbd>
+        </div>
+
+        <div class="p-5 rounded-xl bg-[#11141d] border border-white/10 flex items-center justify-between">
+          <div class="text-slate-300 font-sans text-sm">Multi-line Prompt Input</div>
+          <kbd class="px-2.5 py-1 bg-white/10 text-blue-400 rounded-md border border-white/15 font-bold">Ctrl + Enter</kbd>
+        </div>
+
+        <div class="p-5 rounded-xl bg-[#11141d] border border-white/10 flex items-center justify-between">
+          <div class="text-slate-300 font-sans text-sm">File Picker Autocomplete</div>
+          <kbd class="px-2.5 py-1 bg-white/10 text-blue-400 rounded-md border border-white/15 font-bold">@filename</kbd>
+        </div>
+
+        <div class="p-5 rounded-xl bg-[#11141d] border border-white/10 flex items-center justify-between">
+          <div class="text-slate-300 font-sans text-sm">Scroll Chat Transcript</div>
+          <kbd class="px-2.5 py-1 bg-white/10 text-blue-400 rounded-md border border-white/15 font-bold">PgUp / PgDn</kbd>
+        </div>
+
+        <div class="p-5 rounded-xl bg-[#11141d] border border-white/10 flex items-center justify-between">
+          <div class="text-slate-300 font-sans text-sm">Undo / Revert Last Turn</div>
+          <code class="text-emerald-400 bg-emerald-950/60 px-2.5 py-1 rounded-md border border-emerald-500/30 font-bold">/rollback</code>
+        </div>
+
+        <div class="p-5 rounded-xl bg-[#11141d] border border-white/10 flex items-center justify-between">
+          <div class="text-slate-300 font-sans text-sm">Provider Setup Wizard</div>
+          <code class="text-blue-400 bg-blue-950/60 px-2.5 py-1 rounded-md border border-blue-500/30 font-bold">/setup</code>
+        </div>
+
+      </div>
+
+    </section>
+
+    <!-- SECTION: CALL TO ACTION (CTA) -->
+    <section class="py-24 relative overflow-hidden">
+      <div class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 text-center relative z-10">
+        
+        <div class="p-10 sm:p-16 rounded-3xl bg-gradient-to-b from-blue-950/40 via-[#11141f] to-[#0d0f17] border border-blue-500/30 shadow-2xl relative">
+          
+          <h2 class="text-3xl sm:text-5xl font-extrabold text-white tracking-tight">
+            Ready for Lightning Fast Terminal AI?
+          </h2>
+          <p class="mt-4 text-base sm:text-lg text-slate-400 max-w-xl mx-auto">
+            Install with one command. Connect your model. Experience the future of autonomous CLI coding agents.
+          </p>
+
+          <div class="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4">
+            <button type="button" class="copy-install-btn w-full sm:w-auto px-8 py-4 rounded-xl font-bold text-sm text-white bg-blue-600 hover:bg-blue-500 active:scale-95 transition-all shadow-xl shadow-blue-600/30 flex items-center justify-center gap-2" data-command="npm install -g @theruid/ruid">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+              <span>npm install -g @theruid/ruid</span>
+            </button>
+
+            <a href="https://github.com/Theruid/ruidAgent" target="_blank" rel="noopener noreferrer" class="w-full sm:w-auto px-8 py-4 rounded-xl font-bold text-sm text-slate-300 bg-white/5 border border-white/10 hover:bg-white/10 hover:text-white transition-all flex items-center justify-center gap-2">
+              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+              <span>Explore GitHub Repository</span>
+            </a>
           </div>
 
         </div>
@@ -782,379 +864,38 @@
       </div>
     </section>
 
-  </div>
+  </main>
 
-  <!-- Footer -->
-  <footer>
-    <div class="container">
-      <p>Released under Apache-2.0 License. Open source on <a href="https://github.com/Theruid/ruidAgent" target="_blank">GitHub</a> • Published on <a href="https://www.npmjs.com/package/@theruid/ruid" target="_blank">NPM</a></p>
+  <!-- FOOTER -->
+  <footer class="border-t border-white/10 bg-[#07080c] py-12 text-slate-400 text-xs font-mono">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row items-center justify-between gap-6">
+      
+      <div class="flex items-center gap-3">
+        <span class="font-bold text-white font-sans text-sm">&gt; ruid</span>
+        <span class="text-slate-600">|</span>
+        <span>Apache 2.0 License</span>
+        <span class="text-slate-600">|</span>
+        <span>Built by <a href="https://github.com/Theruid" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:underline">Theruid</a></span>
+      </div>
+
+      <div class="flex items-center gap-6 text-slate-400">
+        <a href="docs.html" class="hover:text-white transition-colors">Documentation</a>
+        <a href="https://github.com/Theruid/ruidAgent" target="_blank" rel="noopener noreferrer" class="hover:text-white transition-colors">GitHub</a>
+        <a href="https://www.npmjs.com/package/@theruid/ruid" target="_blank" rel="noopener noreferrer" class="hover:text-white transition-colors">npm Package</a>
+        <a href="https://github.com/Theruid/ruidAgent/releases" target="_blank" rel="noopener noreferrer" class="hover:text-white transition-colors">Releases</a>
+        <a href="#modes" class="hover:text-white transition-colors">Operating Modes</a>
+      </div>
+
     </div>
   </footer>
 
-  <!-- Live Interactive Application Script -->
-  <script>
-    function copyInstall() {
-      navigator.clipboard.writeText('npm install -g @theruid/ruid');
-      const label = document.getElementById('copy-label');
-      label.textContent = 'Copied!';
-      setTimeout(() => { label.textContent = 'Copy'; }, 2000);
-    }
+  <!-- Toast Notification System -->
+  <div id="toast" class="fixed bottom-6 right-6 z-50 transform translate-y-20 opacity-0 transition-all duration-300 flex items-center gap-3 bg-[#11141f] border border-blue-500/50 text-white px-4 py-3 rounded-xl shadow-2xl backdrop-blur-xl text-xs font-mono" role="status" aria-live="polite">
+    <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+    <span id="toast-message">Copied to clipboard!</span>
+  </div>
 
-    let currentMode = 'code';
-    const modes = ['code', 'plan', 'auto'];
-
-    function cycleMode() {
-      const nextIdx = (modes.indexOf(currentMode) + 1) % modes.length;
-      currentMode = modes[nextIdx];
-      updateModeUI();
-    }
-
-    function updateModeUI() {
-      const pill = document.getElementById('status-mode-pill');
-      const input = document.getElementById('real-terminal-input');
-      pill.className = `status-mode-btn ${currentMode}`;
-      pill.textContent = `[${currentMode.toUpperCase()}]`;
-      input.placeholder = `Ask in [${currentMode.toUpperCase()}] mode… (Tab: mode, Ctrl+Enter: newline, @file, /help)`;
-    }
-
-    const COMMANDS = [
-      { name: "/mode", args: "<code|plan|auto>", description: "Switch mode or show current (Tab cycles)" },
-      { name: "/tasks", description: "Show active plan and tasks" },
-      { name: "/mcp", description: "List connected Model Context Protocol (MCP) servers & tools" },
-      { name: "/rollback", args: "[turn]", description: "Revert file modifications made during turn" },
-      { name: "/new", description: "Start a new chat session" },
-      { name: "/resume", description: "Pick and resume a saved session with live search" },
-      { name: "/setup", description: "Interactive LLM provider setup wizard" },
-      { name: "/providers", description: "Browse, search & switch configured providers" },
-      { name: "/help", description: "Show available commands" }
-    ];
-
-    function onInputChange(e) {
-      const val = e.target.value;
-      const palette = document.getElementById('command-palette-container');
-      const inputWrap = document.getElementById('input-box-wrapper');
-
-      if (val.startsWith('/') && !val.includes(' ')) {
-        palette.style.display = 'block';
-        inputWrap.classList.add('active-cmd');
-        const q = val.toLowerCase();
-        const matches = COMMANDS.filter(c => c.name.startsWith(q));
-        palette.innerHTML = `
-          <div class="command-palette-box">
-            <div class="command-palette-header">
-              <span>Commands</span>
-              <span style="color: #64748b; font-weight: normal;">↑↓ select · Tab complete · Enter run</span>
-            </div>
-            ${matches.map((c, i) => `
-              <div class="command-item ${i === 0 ? 'selected' : ''}">
-                <div>
-                  <span class="cmd-name">${c.name}</span>
-                  ${c.args ? `<span style="color: #64748b;"> ${c.args}</span>` : ''}
-                </div>
-                <div class="cmd-desc">${c.description}</div>
-              </div>
-            `).join('')}
-          </div>
-        `;
-      } else {
-        palette.style.display = 'none';
-        inputWrap.classList.remove('active-cmd');
-      }
-    }
-
-    function onInputKey(e) {
-      if (e.key === 'Tab') {
-        e.preventDefault();
-        const val = e.target.value;
-        if (val.startsWith('/')) {
-          const match = COMMANDS.find(c => c.name.startsWith(val));
-          if (match) {
-            e.target.value = match.name + ' ';
-            onInputChange(e);
-            return;
-          }
-        }
-        cycleMode();
-      } else if (e.key === 'Enter') {
-        const val = e.target.value.trim();
-        if (!val) return;
-        e.target.value = '';
-        document.getElementById('command-palette-container').style.display = 'none';
-        document.getElementById('input-box-wrapper').classList.remove('active-cmd');
-        runCustomTurn(val);
-      }
-    }
-
-    let activeTimeout = null;
-
-    const SCENARIOS = ['welcome', 'diff_fix', 'swarm', 'planning', 'sessions', 'slash_cmd'];
-    let autoRotateTimer = null;
-    let isUserInteracting = false;
-
-    function startAutoRotation() {
-      if (autoRotateTimer) clearInterval(autoRotateTimer);
-      autoRotateTimer = setInterval(() => {
-        if (isUserInteracting) return;
-        const currentActive = document.querySelector('.scenario-btn.active')?.getAttribute('onclick');
-        const available = SCENARIOS.filter(s => !currentActive || !currentActive.includes(s));
-        const next = available[Math.floor(Math.random() * available.length)];
-        playScenario(next, false);
-      }, 7000);
-    }
-
-    function onUserSelectScenario(scenario) {
-      isUserInteracting = true;
-      playScenario(scenario, true);
-      if (autoRotateTimer) clearInterval(autoRotateTimer);
-      setTimeout(() => {
-        isUserInteracting = false;
-        startAutoRotation();
-      }, 14000);
-    }
-
-    function playScenario(scenario, manual = false) {
-      if (activeTimeout) clearTimeout(activeTimeout);
-      document.querySelectorAll('.scenario-btn').forEach(b => b.classList.remove('active'));
-      const activeBtn = Array.from(document.querySelectorAll('.scenario-btn')).find(b => b.getAttribute('onclick')?.includes(scenario));
-      if (activeBtn) activeBtn.classList.add('active');
-
-      const body = document.getElementById('screen-body');
-      const panels = document.getElementById('dynamic-panels');
-      const palette = document.getElementById('command-palette-container');
-      const msgCount = document.getElementById('status-msg-count');
-      const taskCount = document.getElementById('status-task-indicator');
-      const spin = document.getElementById('status-spin');
-      const usage = document.getElementById('status-usage-text');
-
-      panels.innerHTML = '';
-      palette.style.display = 'none';
-      taskCount.textContent = '';
-      spin.style.display = 'none';
-
-      if (scenario === 'welcome') {
-        currentMode = 'code';
-        updateModeUI();
-        msgCount.textContent = '0 msgs';
-        usage.textContent = '0 in · 0 out · $0.00';
-        body.style.justifyContent = 'center';
-        body.innerHTML = `
-          <div class="app-welcome">
-            <div class="welcome-logo">   ____    __  __    ____    ____
-  / __ \\  / / / /   /  _/   / __ \\
- / /_/ / / / / /    / /    / / / /
-/ _, _/ / /_/ /   _/ /    / /_/ /
-/_/ |_|  \\____/   /___/   /_____/  </div>
-            <div class="welcome-sub">Tab: cycle modes · @file: attach file · Ctrl+Enter: newline · /setup</div>
-          </div>
-        `;
-      } else if (scenario === 'diff_fix') {
-        currentMode = 'code';
-        updateModeUI();
-        msgCount.textContent = '2 msgs';
-        usage.textContent = '2.4k in (1.8k cached) · 410 out · ~$0.005 · 1.1s';
-        body.style.justifyContent = 'flex-start';
-        body.innerHTML = `
-          <div class="chat-messages">
-            <div class="msg-block">
-              <div class="msg-header-user">you</div>
-              <div class="msg-body-user">Fix the token expiration check in src/auth.ts</div>
-            </div>
-            <div class="msg-block">
-              <div class="msg-header-agent">agent</div>
-              <div class="msg-body-agent">I will read src/auth.ts and fix the expiration verification operator.</div>
-              <div><span class="tool-badge success"><span class="dot-bullet">●</span> read_file src/auth.ts (48 lines)</span></div>
-            </div>
-          </div>
-        `;
-
-        panels.innerHTML = `
-          <div class="permission-prompt-box">
-            <div class="permission-header">
-              Action requires permission: <span style="color: #fef08a;">edit_file</span>
-            </div>
-            <div class="diff-container">
-              <div class="diff-dim">--- src/auth.ts</div>
-              <div class="diff-dim">+++ src/auth.ts</div>
-              <div class="diff-hunk">@@ -28,3 +28,3 @@</div>
-              <div class="diff-del">-   return token.exp &lt;= Date.now();</div>
-              <div class="diff-add">+   return token.exp &gt; Date.now();</div>
-            </div>
-            <div class="permission-footer">
-              <span style="color: #06b6d4;">[y]</span> approve ·
-              <span style="color: #ef4444;">[n]</span> reject ·
-              <span style="color: #d946ef;">[a]</span> always allow "edit_file" this session
-            </div>
-          </div>
-        `;
-      } else if (scenario === 'swarm') {
-        currentMode = 'auto';
-        updateModeUI();
-        msgCount.textContent = '2 msgs';
-        usage.textContent = '6.8k in (5.2k cached) · 1.2k out · ~$0.018 · 2.4s';
-        body.style.justifyContent = 'flex-start';
-        body.innerHTML = `
-          <div class="chat-messages">
-            <div class="msg-block">
-              <div class="msg-header-user">you</div>
-              <div class="msg-body-user">Audit src/permissions.ts, src/mcp/client.ts, and src/tools/search.ts in parallel for security edge cases</div>
-            </div>
-            <div class="msg-block">
-              <div class="msg-header-agent">agent</div>
-              <div class="msg-body-agent">Fanning out 3 concurrent explore subagents with worktree isolation:</div>
-              <div><span class="tool-badge swarm"><span class="dot-bullet">●</span> subagent_parallel: 3 workers (EXPLORE, EXPLORE, EXPLORE) (completed)</span></div>
-              <div class="msg-body-agent" style="margin-top: 0.5rem;"><strong>Swarm Synthesis:</strong><br>• permissions.ts: Tier 4 correctly protects .env & keys; subshell evasion handled.<br>• client.ts: Protocol handshake sends initialized event with 10s timeout.<br>• search.ts: Ripgrep parses Windows drive letters safely.</div>
-            </div>
-          </div>
-        `;
-      } else if (scenario === 'planning') {
-        currentMode = 'plan';
-        updateModeUI();
-        msgCount.textContent = '2 msgs';
-        taskCount.textContent = '3 tasks · ';
-        usage.textContent = '4.1k in (3.0k cached) · 620 out · ~$0.008 · 1.6s';
-        body.style.justifyContent = 'flex-start';
-        body.innerHTML = `
-          <div class="chat-messages">
-            <div class="msg-block">
-              <div class="msg-header-user">you</div>
-              <div class="msg-body-user">/plan add database retry logic with exponential backoff</div>
-            </div>
-            <div class="msg-block">
-              <div class="msg-header-agent">agent</div>
-              <div class="msg-body-agent">Switched to [PLAN] mode. File mutations disabled. Investigating connection pool handlers:</div>
-              <div><span class="tool-badge success"><span class="dot-bullet">●</span> grep "createPool" in src/db/ (2 matches)</span></div>
-            </div>
-          </div>
-        `;
-
-        panels.innerHTML = `
-          <div class="task-panel-box">
-            <div class="task-panel-header">📋 Plan / Tasks (1/3)</div>
-            <div class="task-item completed">
-              <span class="task-check">✓</span> <span>#1 Analyze connection pool failure modes</span>
-            </div>
-            <div class="task-item running">
-              <span style="color: #eab308;">⠋</span> <span>#2 Implement backoff wrapper in src/db/retry.ts (with Jitter)</span>
-            </div>
-            <div class="task-item pending">
-              <span>○</span> <span>#3 Add integration tests for transient network drops</span>
-            </div>
-          </div>
-        `;
-      } else if (scenario === 'sessions') {
-        currentMode = 'code';
-        updateModeUI();
-        msgCount.textContent = '0 msgs';
-        body.style.justifyContent = 'flex-start';
-        body.innerHTML = `
-          <div class="session-picker-box">
-            <div class="command-palette-header">
-              <span>Resume Session: <strong style="color: #fff;">auth</strong><span style="color: #64748b;">█</span></span>
-              <span style="color: #64748b; font-weight: normal;">↑↓ select · Enter open · Esc cancel</span>
-            </div>
-            <div class="command-item selected" style="margin-top: 0.3rem;">
-              <div><span class="cmd-name">> Authentication refactor ticket</span> <span style="color: #64748b;">— "jsonwebtoken…"</span></div>
-              <div class="cmd-desc">2m ago · 8 msgs</div>
-            </div>
-            <div class="command-item">
-              <div><span class="cmd-name">  OAuth2 callback token verification</span></div>
-              <div class="cmd-desc">1d ago · 14 msgs</div>
-            </div>
-            <div class="command-item">
-              <div><span class="cmd-name">  Authorize endpoint unit tests</span></div>
-              <div class="cmd-desc">3d ago · 6 msgs</div>
-            </div>
-          </div>
-        `;
-      } else if (scenario === 'slash_cmd') {
-        currentMode = 'code';
-        updateModeUI();
-        msgCount.textContent = '0 msgs';
-        body.style.justifyContent = 'center';
-        body.innerHTML = `
-          <div class="app-welcome">
-            <div class="welcome-logo">   ____    __  __    ____    ____
-  / __ \\  / / / /   /  _/   / __ \\
- / /_/ / / / / /    / /    / / / /
-/ _, _/ / /_/ /   _/ /    / /_/ /
-/_/ |_|  \\____/   /___/   /_____/  </div>
-          </div>
-        `;
-
-        palette.style.display = 'block';
-        palette.innerHTML = `
-          <div class="command-palette-box">
-            <div class="command-palette-header">
-              <span>Commands</span>
-              <span style="color: #64748b; font-weight: normal;">↑↓ select · Tab complete · Enter run</span>
-            </div>
-            <div class="command-item selected">
-              <div><span class="cmd-name">/mode</span><span style="color: #64748b;"> &lt;code|plan|auto&gt;</span></div>
-              <div class="cmd-desc">Switch mode or show current (Tab cycles)</div>
-            </div>
-            <div class="command-item">
-              <div><span class="cmd-name">/tasks</span></div>
-              <div class="cmd-desc">Show active plan and tasks</div>
-            </div>
-            <div class="command-item">
-              <div><span class="cmd-name">/mcp</span></div>
-              <div class="cmd-desc">List connected Model Context Protocol (MCP) servers & tools</div>
-            </div>
-            <div class="command-item">
-              <div><span class="cmd-name">/rollback</span><span style="color: #64748b;"> [turn]</span></div>
-              <div class="cmd-desc">Revert file modifications made during turn</div>
-            </div>
-            <div class="command-item">
-              <div><span class="cmd-name">/setup</span></div>
-              <div class="cmd-desc">Interactive LLM provider setup wizard</div>
-            </div>
-          </div>
-        `;
-      }
-    }
-
-    function runCustomTurn(text) {
-      const body = document.getElementById('screen-body');
-      const panels = document.getElementById('dynamic-panels');
-      const spin = document.getElementById('status-spin');
-      body.style.justifyContent = 'flex-start';
-      panels.innerHTML = '';
-      spin.style.display = 'inline';
-
-      const userHtml = `
-        <div class="chat-messages" id="live-chat">
-          <div class="msg-block">
-            <div class="msg-header-user">you</div>
-            <div class="msg-body-user">${escapeHtml(text)}</div>
-          </div>
-          <div class="msg-block" id="agent-response-block">
-            <div class="msg-header-agent">agent</div>
-            <div class="msg-body-agent" id="stream-text">Thinking…</div>
-          </div>
-        </div>
-      `;
-      body.innerHTML = userHtml;
-
-      setTimeout(() => {
-        const stream = document.getElementById('stream-text');
-        if (stream) {
-          stream.innerHTML = `Inspected context in workspace. Formulating next step in [${currentMode.toUpperCase()}] mode.`;
-          const agentBlock = document.getElementById('agent-response-block');
-          const toolDiv = document.createElement('div');
-          toolDiv.innerHTML = `<span class="tool-badge success"><span class="dot-bullet">●</span> grep "${escapeHtml(text.slice(0, 16))}" in src/ (3 matches)</span>`;
-          agentBlock.appendChild(toolDiv);
-          spin.style.display = 'none';
-        }
-      }, 700);
-    }
-
-    function escapeHtml(str) {
-      return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-    }
-
-    const initialScenario = SCENARIOS[Math.floor(Math.random() * SCENARIOS.length)];
-    playScenario(initialScenario);
-    startAutoRotation();
-  </script>
+  <!-- JavaScript -->
+  <script src="script.js"></script>
 </body>
 </html>
