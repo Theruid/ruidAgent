@@ -57,24 +57,24 @@ export function CommandPalette({
       marginBottom={0}
     >
       <Box justifyContent="space-between" marginBottom={0}>
-        <Text bold color="cyan">
+        <Text bold color="cyan" wrap="truncate">
           Commands
         </Text>
-        <Text dimColor>↑↓ select · Tab complete · Enter run · Esc cancel</Text>
+        <Text dimColor wrap="truncate">↑↓ select · Tab complete · Enter run · Esc cancel</Text>
       </Box>
       {visibleCommands.map((cmd, i) => {
         const actualIdx = startIdx + i;
         const isSelected = actualIdx === clampedIndex;
         return (
           <Box key={cmd.name} justifyContent="space-between">
-            <Box>
-              <Text color={isSelected ? "cyanBright" : "cyan"} bold={isSelected}>
+            <Box flexShrink={0}>
+              <Text color={isSelected ? "cyanBright" : "cyan"} bold={isSelected} wrap="truncate">
                 {isSelected ? "> " : "  "}
                 {cmd.name}
               </Text>
-              {cmd.args && <Text dimColor> {cmd.args}</Text>}
+              {cmd.args && <Text dimColor wrap="truncate"> {cmd.args}</Text>}
             </Box>
-            <Text dimColor={!isSelected} color={isSelected ? "white" : undefined}>
+            <Text dimColor={!isSelected} color={isSelected ? "white" : undefined} wrap="truncate">
               {cmd.description}
             </Text>
           </Box>

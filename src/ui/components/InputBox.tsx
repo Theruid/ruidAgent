@@ -9,6 +9,7 @@ export interface InputBoxProps {
   disabled: boolean;
   placeholder: string;
   initialValue?: string;
+  onPaletteChange?(isOpen: boolean): void;
   onCycleMode?(): void;
   onScrollUp?(): void;
   onScrollDown?(): void;
@@ -22,6 +23,7 @@ export function InputBox({
   disabled,
   placeholder,
   initialValue,
+  onPaletteChange,
   onCycleMode,
   onScrollUp,
   onScrollDown,
@@ -73,6 +75,11 @@ export function InputBox({
   const atQuery = atMatch ? atMatch[1] : null;
   const matchingFiles = atQuery !== null ? searchFiles(workspaceFiles, atQuery) : [];
   const shouldShowFilePalette = atQuery !== null && !showPalette;
+
+  const isPaletteOpen = shouldShowCmdPalette || shouldShowFilePalette;
+  useEffect(() => {
+    onPaletteChange?.(isPaletteOpen);
+  }, [isPaletteOpen, onPaletteChange]);
 
   useInput(
     (input, key) => {

@@ -66,6 +66,7 @@ export function App({
   const { rows, columns } = useTerminalDimensions();
   const exitIntent = useRef<number>(0);
   const [updateStatus, setUpdateStatus] = useState<string | null>(null);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const updating = useRef(false);
 
   // Global key routing.
@@ -154,6 +155,9 @@ export function App({
     // InputBox: border (2 lines) + content lines
     const inputLines = state.inputDraft ? state.inputDraft.split("\n").length : 1;
     overhead += Math.max(3, inputLines + 2);
+    if (paletteOpen) {
+      overhead += 9;
+    }
   }
   if (state.notice) overhead += 1;
   if (state.pendingPermission) {
@@ -222,6 +226,7 @@ export function App({
           onSubmit={onSubmit}
           disabled={state.phase === "running" || Boolean(state.pendingPermission) || Boolean(state.updateInfo?.hasUpdate)}
           initialValue={state.inputDraft}
+          onPaletteChange={setPaletteOpen}
           onCycleMode={onCycleMode}
           onScrollUp={() => store.scrollUp(2)}
           onScrollDown={() => store.scrollDown(2)}

@@ -38,10 +38,10 @@ export function FilePalette({
       marginBottom={0}
     >
       <Box justifyContent="space-between" marginBottom={0}>
-        <Text bold color="yellow">
+        <Text bold color="yellow" wrap="truncate">
           📁 Files (@{query})
         </Text>
-        <Text dimColor>↑↓ navigate · Tab / Enter attach</Text>
+        <Text dimColor wrap="truncate">↑↓ navigate · Tab / Enter attach</Text>
       </Box>
       {visibleFiles.map((file, i) => {
         const actualIdx = startIdx + i;
