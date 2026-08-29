@@ -5,15 +5,16 @@ All notable changes to `@theruid/ruid` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.3.21] - 2026-08-29
 
 ### Added
+- Git-backed working tree rollback engine (`src/tools/gitRollback.ts`) tracking turn checkpoints, removing created directories and files, and restoring modified/deleted tracked files.
 - Tool execution hooks system (`src/hooks.ts`) supporting `preToolUse` and `postToolUse` rules with fail-closed security enforcement, stdin JSON delivery, and `/hooks` command.
-- Disk persistence for turn snapshots under `~/.ruid/snapshots/<sessionId>.snapshots.json` with 25-turn rolling pruning, base64 binary file capture, and 1MB size bounds.
+- Disk persistence for turn snapshots with 25-turn rolling pruning, base64 binary file capture, and 1MB size bounds.
 - Full task lifecycle management with `task_delete` tool and task list serialization into session history (`tasks?: AgentTask[]`).
 - Dynamic `RUID_CONFIG_DIR` configuration override for deterministic test isolation without home directory contamination.
 - GitHub Actions CI workflow (`.github/workflows/ci.yml`) triggering on push and pull requests with `typecheck` and `test` gates.
-- Unified TypeScript test infrastructure consolidating all 17 legacy standalone scripts into `src/**/*.test.ts`.
+- Unified TypeScript test infrastructure consolidating all standalone test scripts into `src/**/*.test.ts`.
 - Sub-agent and session crash recovery detection appending synthetic interrupted tool results on mid-execution kill.
 - Side-effect reporting in turn snapshot rollback engine.
 - Smoke tests for provider presets (Anthropic, OpenAI, DeepSeek, Groq, OpenRouter, Ollama, LM Studio).
