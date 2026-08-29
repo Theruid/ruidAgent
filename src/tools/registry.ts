@@ -3,8 +3,9 @@ import { Workspace, readFileTool, writeFileTool, editFileTool, listDirTool, glob
 import { grepTool } from "./search.js";
 import { bashTool, ProcessManager, processStatusTool, processLogsTool, processKillTool } from "./bash.js";
 import { gitStatusTool, gitDiffTool, gitLogTool } from "./git.js";
-import { TaskStore, taskCreateTool, taskUpdateTool, taskListTool } from "./tasks.js";
+import { TaskStore, taskCreateTool, taskUpdateTool, taskDeleteTool, taskListTool } from "./tasks.js";
 import { SnapshotManager, rollbackTool } from "./snapshot.js";
+import { GitCheckpointManager, gitRollbackTool } from "./gitRollback.js";
 import { subagentTool, subagentParallelTool } from "./subagent.js";
 import { webSearchTool, webFetchTool } from "./web.js";
 import type { ToolDef, LLMProvider } from "../providers/types.js";
@@ -24,6 +25,7 @@ export interface BuildRegistryOptions {
   workspace: Workspace;
   taskStore?: TaskStore;
   snapshots?: SnapshotManager;
+  gitCheckpoints?: GitCheckpointManager;
   provider?: LLMProvider;
   model?: string;
   signal?: AbortSignal;
@@ -41,11 +43,13 @@ export async function buildRegistry(
   signalArg?: AbortSignal,
   processManagerArg = new ProcessManager(),
   onBashChunkArg?: (chunk: string, stream: "stdout" | "stderr") => void,
-  mcpClientsArg: MCPClient[] = []
+  mcpClientsArg: MCPClient[] = [],
+  gitCheckpointsArg?: GitCheckpointManager
 ): Promise<Map<string, AgentTool>> {
   let ws: Workspace;
   let taskStore: TaskStore;
   let snapshots: SnapshotManager;
+  let gitCheckpoints: GitCheckpointManager | undefined;
   let provider: LLMProvider | undefined;
   let model: string | undefined;
   let signal: AbortSignal | undefined;
@@ -57,6 +61,7 @@ export async function buildRegistry(
     ws = optionsOrWs.workspace;
     taskStore = optionsOrWs.taskStore ?? new TaskStore();
     snapshots = optionsOrWs.snapshots ?? new SnapshotManager();
+    gitCheckpoints = optionsOrWs.gitCheckpoints;
     provider = optionsOrWs.provider;
     model = optionsOrWs.model;
     signal = optionsOrWs.signal;
@@ -67,6 +72,7 @@ export async function buildRegistry(
     ws = optionsOrWs;
     taskStore = taskStoreArg;
     snapshots = snapshotsArg;
+    gitCheckpoints = gitCheckpointsArg;
     provider = providerArg;
     model = modelArg;
     signal = signalArg;
@@ -87,10 +93,14 @@ export async function buildRegistry(
     { ...taskListTool(taskStore), requiresPermission: false },
     { ...taskCreateTool(taskStore), requiresPermission: false },
     { ...taskUpdateTool(taskStore), requiresPermission: false },
+    { ...taskDeleteTool(taskStore), requiresPermission: false },
     { ...processStatusTool(processManager), requiresPermission: false },
     { ...processLogsTool(processManager), requiresPermission: false },
     { ...processKillTool(processManager), requiresPermission: true },
-    { ...rollbackTool(ws, snapshots), requiresPermission: false },
+    {
+      ...(gitCheckpoints ? gitRollbackTool(ws, gitCheckpoints) : rollbackTool(ws, snapshots)),
+      requiresPermission: false,
+    },
     ...(provider && model
       ? [
           { ...subagentTool(ws, provider, model, signal), requiresPermission: false },

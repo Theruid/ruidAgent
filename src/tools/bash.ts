@@ -11,6 +11,56 @@ const MAX_OUTPUT_BYTES = 200 * 1024;
 const PROMPT_QUIET_WINDOW_MS = 400;
 const ROLLING_BUFFER_MAX = 300;
 
+export interface ShellConfig {
+  executable: string;
+  args: (command: string) => string[];
+  type: "bash" | "powershell" | "cmd" | "sh";
+}
+
+let cachedShell: ShellConfig | null = null;
+
+export function getShell(): ShellConfig {
+  if (cachedShell) return cachedShell;
+
+  if (process.platform !== "win32") {
+    cachedShell = {
+      executable: "/bin/sh",
+      args: (cmd) => ["-c", cmd],
+      type: "sh",
+    };
+    return cachedShell;
+  }
+
+  const localAppData = process.env.LOCALAPPDATA || "";
+  const programFiles = process.env["ProgramFiles"] || "C:/Program Files";
+  const programFilesX86 = process.env["ProgramFiles(x86)"] || "C:/Program Files (x86)";
+
+  const gitBashCandidates = [
+    join(programFiles, "Git/bin/bash.exe").replace(/\\/g, "/"),
+    join(programFiles, "Git/usr/bin/bash.exe").replace(/\\/g, "/"),
+    join(programFilesX86, "Git/bin/bash.exe").replace(/\\/g, "/"),
+    localAppData ? join(localAppData, "Programs/Git/bin/bash.exe").replace(/\\/g, "/") : "",
+  ].filter(Boolean);
+
+  for (const candidate of gitBashCandidates) {
+    if (existsSync(candidate)) {
+      cachedShell = {
+        executable: candidate,
+        args: (cmd) => ["-c", cmd],
+        type: "bash",
+      };
+      return cachedShell;
+    }
+  }
+
+  cachedShell = {
+    executable: "powershell.exe",
+    args: (cmd) => ["-NoProfile", "-NonInteractive", "-Command", cmd],
+    type: "powershell",
+  };
+  return cachedShell;
+}
+
 export const NON_INTERACTIVE_ENV = {
   CI: "1",
   DEBIAN_FRONTEND: "noninteractive",
@@ -94,9 +144,10 @@ export class ProcessManager {
   spawnBackground(command: string, cwd: string): ProcessInfo {
     const id = `proc_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
     const logFilePath = join(this.taskLogsDir(), `${id}.log`);
+    const shell = getShell();
     const isWindows = process.platform === "win32";
 
-    const child = spawn(isWindows ? "cmd.exe" : "/bin/sh", isWindows ? ["/c", command] : ["-c", command], {
+    const child = spawn(shell.executable, shell.args(command), {
       cwd,
       detached: true,
       env: { ...process.env, ...NON_INTERACTIVE_ENV },
@@ -201,6 +252,7 @@ export function bashTool(
       }
 
       const timeout = args.timeout_ms ?? DEFAULT_TIMEOUT_MS;
+      const shell = getShell();
       const isWindows = process.platform === "win32";
 
       return new Promise((resolve) => {
@@ -209,7 +261,7 @@ export function bashTool(
         let quietTimer: NodeJS.Timeout | null = null;
         let rollingBuffer = "";
 
-        const child = spawn(isWindows ? "cmd.exe" : "/bin/sh", isWindows ? ["/c", args.command] : ["-c", args.command], {
+        const child = spawn(shell.executable, shell.args(args.command), {
           cwd: ws.root,
           detached: !isWindows,
           env: { ...process.env, ...NON_INTERACTIVE_ENV },

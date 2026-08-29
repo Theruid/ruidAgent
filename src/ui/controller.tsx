@@ -21,6 +21,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { TaskStore } from "../tools/tasks.js";
 import { SnapshotManager } from "../tools/snapshot.js";
+import { GitCheckpointManager } from "../tools/gitRollback.js";
 import { checkForUpdate } from "../updater.js";
 import { MCPClient } from "../mcp/client.js";
 
@@ -74,6 +75,7 @@ const AUTO_APPROVE = new Set([
   "task_list",
   "task_create",
   "task_update",
+  "task_delete",
   "rollback",
   "subagent_spawn",
 ]);
@@ -96,6 +98,7 @@ export function startTui(options: TuiOptions): void {
   const permissions: DeferredPermissions = createDeferredPermissions(AUTO_APPROVE);
   const taskStore = new TaskStore();
   const snapshots = new SnapshotManager();
+  const gitCheckpoints = new GitCheckpointManager();
 
   // Instantiate and connect configured MCP servers
   const mcpClients: MCPClient[] = [];
@@ -116,6 +119,8 @@ export function startTui(options: TuiOptions): void {
 
   // Current conversation state
   let sessionId = newSessionId();
+  snapshots.attachSession(sessionId);
+  gitCheckpoints.attachSession(sessionId);
   let history: LLMMessage[] = [];
   let dirty = false; // has content worth autosaving
 
@@ -250,7 +255,10 @@ export function startTui(options: TuiOptions): void {
         permissions: permissions.manager,
         taskStore,
         snapshots,
+        gitCheckpoints,
         mcpClients,
+        hooks: appConfig.hooks,
+        sessionId,
         onEvent: (e) => store.applyLoopEvent(e),
       });
       dirty = true;
@@ -285,6 +293,7 @@ export function startTui(options: TuiOptions): void {
       providerName: active?.name ?? "?",
       model: model ?? "?",
       messages: history,
+      tasks: taskStore.list(),
     });
     dirty = false;
   }
@@ -299,8 +308,17 @@ export function startTui(options: TuiOptions): void {
     }
     flushAutosave();
     sessionId = sess.id;
+    snapshots.attachSession(sessionId);
+    gitCheckpoints.attachSession(sessionId);
     history = sess.messages;
     dirty = false;
+    if (sess.tasks && Array.isArray(sess.tasks)) {
+      taskStore.restore(sess.tasks);
+      store.setTasks(taskStore.list());
+    } else {
+      taskStore.clear();
+      store.setTasks([]);
+    }
     store.loadMessages(toViewMessages(history));
     if (active === null || sess.providerName !== active.name) {
       if (sess.providerName && sess.providerName !== "?") tryConnect(sess.providerName);
@@ -323,6 +341,8 @@ export function startTui(options: TuiOptions): void {
       case "new":
         flushAutosave();
         sessionId = newSessionId();
+        snapshots.attachSession(sessionId);
+        gitCheckpoints.attachSession(sessionId);
         history = [];
         dirty = false;
         taskStore.clear();
@@ -428,10 +448,31 @@ export function startTui(options: TuiOptions): void {
         break;
       }
 
+      case "hooks": {
+        const hooks = appConfig.hooks;
+        const pre = hooks?.preToolUse ?? [];
+        const post = hooks?.postToolUse ?? [];
+        if (pre.length === 0 && post.length === 0) {
+          store.setNotice("No tool execution hooks configured in ~/.ruid/config.json");
+          break;
+        }
+        const lines = ["Configured Hooks:"];
+        if (pre.length > 0) {
+          lines.push("  Pre-tool hooks:");
+          pre.forEach((h) => lines.push(`    - tool: ${h.tool ?? "*"} -> ${h.command}`));
+        }
+        if (post.length > 0) {
+          lines.push("  Post-tool hooks:");
+          post.forEach((h) => lines.push(`    - tool: ${h.tool ?? "*"} -> ${h.command}`));
+        }
+        store.setNotice(lines.join("\n"));
+        break;
+      }
+
       case "rollback": {
         const turnNum = rest[0] ? parseInt(rest[0], 10) : undefined;
         try {
-          const { restored, deleted } = snapshots.rollback(process.cwd(), turnNum);
+          const { restored, deleted, deletedDirs } = await gitCheckpoints.rollback(process.cwd(), turnNum);
 
           // Find and pop the last user prompt turn from history
           let lastUserPrompt = "";
@@ -454,7 +495,8 @@ export function startTui(options: TuiOptions): void {
 
           const fileSummary = [];
           if (restored.length > 0) fileSummary.push(`Restored: ${restored.join(", ")}`);
-          if (deleted.length > 0) fileSummary.push(`Removed: ${deleted.join(", ")}`);
+          if (deleted.length > 0) fileSummary.push(`Removed files: ${deleted.join(", ")}`);
+          if (deletedDirs && deletedDirs.length > 0) fileSummary.push(`Removed directories: ${deletedDirs.join(", ")}`);
           if (fileSummary.length === 0) {
             store.setNotice("Rolled back conversation turn (no disk changes to revert).");
           } else {

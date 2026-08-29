@@ -53,6 +53,7 @@ Switch modes at any time by pressing **`Tab`** in the prompt or typing `/mode <m
 | `Ctrl+C` | Interrupt running turn (press twice to exit) |
 | `/tasks` or `/plan` | View currently active plan and tasks |
 | `/mcp` | List connected Model Context Protocol (MCP) servers & tools |
+| `/hooks` | List configured pre/post tool execution hooks |
 | `/rollback [turn]` | Revert file modifications back to pre-turn state |
 | `/new` | Start a new chat session |
 | `/resume` or `/sessions` | Open session picker to resume conversations |
@@ -86,6 +87,36 @@ Add external MCP tools directly in `~/.ruid/config.json`:
 ```
 
 Run `/mcp` in the terminal to inspect active servers and tools.
+
+---
+
+## Tool Execution Hooks
+
+Configure custom pre-execution and post-execution hooks in `~/.ruid/config.json`:
+
+```json
+{
+  "hooks": {
+    "preToolUse": [
+      {
+        "tool": "bash",
+        "command": "node guard.js",
+        "timeoutMs": 5000
+      }
+    ],
+    "postToolUse": [
+      {
+        "tool": "*",
+        "command": "node log.js"
+      }
+    ]
+  }
+}
+```
+
+Hooks receive the event JSON payload on `stdin` and via `RUID_TOOL_NAME`, `RUID_SESSION_ID`, and `RUID_WORKSPACE` environment variables. Pre-tool hooks fail closed (exit code `2` passes custom rejection message to the model; other non-zero codes block execution).
+
+Run `/hooks` in the terminal to inspect configured hooks.
 
 ---
 

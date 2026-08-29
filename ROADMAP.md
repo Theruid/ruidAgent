@@ -33,7 +33,9 @@ This document tracks the current development status, completed milestones, and u
  ├───────────────────────────────────────────────────────────────────┼────────────┤
  │ Phase 11: Interactive Terminal Process Management & Hang Control  │  COMPLETE  │
  ├───────────────────────────────────────────────────────────────────┼────────────┤
- │ Phase 12: AST-Aware Code Graph & Semantic Symbol Indexing         │  UPCOMING  │
+ │ Phase 12: Tool Execution Hooks, Snapshot Persistence & Task Mgmt │  COMPLETE  │
+ ├───────────────────────────────────────────────────────────────────┼────────────┤
+ │ Phase 13: AST-Aware Code Graph & Semantic Symbol Indexing         │  UPCOMING  │
  └───────────────────────────────────────────────────────────────────┴────────────┘
 ```
 
@@ -42,6 +44,9 @@ This document tracks the current development status, completed milestones, and u
 ## 2. Completed Milestones
 
 ### Modern Architecture & Core Subsystems (v0.3.x)
+- [x] **Tool Execution Hooks System**: Configurable preToolUse and postToolUse scripts with fail-closed security enforcement, stdin JSON payloads, and exit code protocol.
+- [x] **Snapshot Persistence & Binary Rollback**: Disk-persisted turn checkpoints under `~/.ruid/snapshots/`, base64 binary file capture, 1MB size limit protections, and session resume attachment.
+- [x] **Task Persistence & Task Deletion**: Full task lifecycle tracking (`task_create`, `task_update`, `task_delete`, `task_list`) serialized directly into session history files.
 - [x] **Tamper-Evident Audit Logging**: Append-only execution records in `.ruid/audit.jsonl` tracking tool sources, risk tiers, and execution latency.
 - [x] **Session Schema Versioning & Migrations**: Schema v2 with backwards-compatible legacy session upgrader.
 - [x] **Structured Context Layering**: Structured XML prompt hierarchy (`<system>`, `<environment>`, `<mode_guidelines>`, `<custom_instructions>`).

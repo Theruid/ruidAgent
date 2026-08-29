@@ -12,9 +12,12 @@ import { buildSystemPromptBlocks } from "./systemPrompt.js";
 import { microCompactHistory, semanticSummarizeHistory, estimateHistoryTokens } from "./context.js";
 import { TaskStore, type AgentTask } from "../tools/tasks.js";
 import { SnapshotManager } from "../tools/snapshot.js";
+import { GitCheckpointManager } from "../tools/gitRollback.js";
 import { ProcessManager } from "../tools/bash.js";
 import { logAudit } from "../audit/log.js";
 import type { MCPClient } from "../mcp/client.js";
+import type { HookConfig } from "../config.js";
+import { runHooks } from "../hooks.js";
 
 export interface LoopOptions {
   provider: LLMProvider;
@@ -31,8 +34,11 @@ export interface LoopOptions {
   thinkingEnabled?: boolean;
   taskStore?: TaskStore;
   snapshots?: SnapshotManager;
+  gitCheckpoints?: GitCheckpointManager;
   processManager?: ProcessManager;
   mcpClients?: MCPClient[];
+  hooks?: HookConfig;
+  sessionId?: string;
 }
 
 export type LoopEvent =
@@ -66,13 +72,16 @@ export async function runAgentLoop(options: LoopOptions): Promise<LLMMessage[]> 
   const ws = new Workspace(options.workspaceRoot ?? process.cwd());
   const taskStore = options.taskStore ?? new TaskStore();
   const snapshots = options.snapshots ?? new SnapshotManager();
+  const gitCheckpoints = options.gitCheckpoints ?? new GitCheckpointManager();
   const processManager = options.processManager ?? new ProcessManager();
+  await gitCheckpoints.beginTurn(ws.root);
   snapshots.beginTurn();
 
   const registry = await buildRegistry({
     workspace: ws,
     taskStore,
     snapshots,
+    gitCheckpoints,
     provider: options.provider,
     model: options.model,
     signal: options.signal,
@@ -94,6 +103,7 @@ export async function runAgentLoop(options: LoopOptions): Promise<LLMMessage[]> 
         "task_list",
         "task_create",
         "task_update",
+        "task_delete",
         "rollback",
         "subagent_spawn",
         "process_status",
@@ -211,12 +221,41 @@ export async function runAgentLoop(options: LoopOptions): Promise<LLMMessage[]> 
     const toolCalls = content.filter((c): c is Extract<typeof c, { type: "tool_call" }> => c.type === "tool_call");
     if (toolCalls.length === 0) break; // final text answer
 
-    // Phase 1: resolve permissions sequentially
+    // Phase 1: resolve hooks and permissions sequentially
     const approvals: boolean[] = [];
-    for (const call of toolCalls) {
-      const tool: AgentTool | undefined = registry.get(call.name);
-      const requiresPermission = tool?.requiresPermission ?? true;
+    const hookDenials: Array<{ index: number; reason: string }> = [];
 
+    for (let i = 0; i < toolCalls.length; i++) {
+      const call = toolCalls[i];
+      const tool: AgentTool | undefined = registry.get(call.name);
+
+      // Run preToolUse hooks
+      if (options.hooks?.preToolUse && options.hooks.preToolUse.length > 0) {
+        const hookRes = await runHooks("preToolUse", options.hooks, {
+          event: "preToolUse",
+          tool: call.name,
+          input: call.input,
+          sessionId: options.sessionId,
+          workspaceRoot: ws.root,
+        });
+
+        if (!hookRes.allow) {
+          approvals.push(false);
+          hookDenials.push({ index: i, reason: hookRes.reason || "Blocked by preToolUse hook." });
+          logAudit({
+            ts: Date.now(),
+            source: "direct",
+            tool: call.name,
+            args: call.input,
+            tier: permissions.classifyRisk?.(call.name, call.input) ?? 1,
+            decision: "denied",
+            error: hookRes.reason,
+          });
+          continue;
+        }
+      }
+
+      const requiresPermission = tool?.requiresPermission ?? true;
       if (!requiresPermission) {
         approvals.push(true);
         continue;
@@ -229,6 +268,16 @@ export async function runAgentLoop(options: LoopOptions): Promise<LLMMessage[]> 
     const results = await Promise.all(
       toolCalls.map(async (call, i) => {
         if (!approvals[i]) {
+          const hookDenial = hookDenials.find((d) => d.index === i);
+          if (hookDenial) {
+            return {
+              type: "tool_result" as const,
+              toolCallId: call.id,
+              content: `Error: ${hookDenial.reason}`,
+              isError: true,
+            };
+          }
+
           options.onEvent?.({ type: "permission_denied", name: call.name });
           return {
             type: "tool_result" as const,
@@ -365,6 +414,25 @@ export async function runAgentLoop(options: LoopOptions): Promise<LLMMessage[]> 
 
         if (call.name.startsWith("task_")) {
           options.onEvent?.({ type: "tasks_updated", tasks: taskStore.list() });
+        }
+
+        // Run postToolUse hooks asynchronously
+        if (options.hooks?.postToolUse && options.hooks.postToolUse.length > 0) {
+          runHooks("postToolUse", options.hooks, {
+            event: "postToolUse",
+            tool: call.name,
+            input: call.input,
+            sessionId: options.sessionId,
+            workspaceRoot: ws.root,
+            result: {
+              content: result.content,
+              isError: result.isError,
+            },
+          }).catch((err) => {
+            if (process.env.DEBUG) {
+              console.error(`[loop debug] postToolUse hook error for ${call.name}:`, err);
+            }
+          });
         }
 
         options.onEvent?.({

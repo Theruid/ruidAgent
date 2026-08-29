@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Tool execution hooks system (`src/hooks.ts`) supporting `preToolUse` and `postToolUse` rules with fail-closed security enforcement, stdin JSON delivery, and `/hooks` command.
+- Disk persistence for turn snapshots under `~/.ruid/snapshots/<sessionId>.snapshots.json` with 25-turn rolling pruning, base64 binary file capture, and 1MB size bounds.
+- Full task lifecycle management with `task_delete` tool and task list serialization into session history (`tasks?: AgentTask[]`).
 - Dynamic `RUID_CONFIG_DIR` configuration override for deterministic test isolation without home directory contamination.
 - GitHub Actions CI workflow (`.github/workflows/ci.yml`) triggering on push and pull requests with `typecheck` and `test` gates.
 - Unified TypeScript test infrastructure consolidating all 17 legacy standalone scripts into `src/**/*.test.ts`.

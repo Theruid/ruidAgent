@@ -38,6 +38,26 @@ export class TaskStore {
     return task;
   }
 
+  delete(id: string): boolean {
+    if (!this.tasks.has(id)) {
+      throw new Error(`Task #${id} not found.`);
+    }
+    return this.tasks.delete(id);
+  }
+
+  restore(tasks: AgentTask[]): void {
+    this.tasks.clear();
+    let maxId = 0;
+    for (const t of tasks) {
+      this.tasks.set(t.id, { ...t });
+      const num = parseInt(t.id, 10);
+      if (!isNaN(num) && num > maxId) {
+        maxId = num;
+      }
+    }
+    this.nextId = maxId + 1;
+  }
+
   list(): AgentTask[] {
     return [...this.tasks.values()];
   }
@@ -99,6 +119,27 @@ export function taskUpdateTool(store: TaskStore) {
     }): Promise<string> {
       const t = store.update(args.id, args);
       return `Updated task #${t.id}: "${t.subject}" [status: ${t.status}]`;
+    },
+  };
+}
+
+export function taskDeleteTool(store: TaskStore) {
+  return {
+    name: "task_delete",
+    description: "Delete a task from the tracking list by its ID.",
+    parameters: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Task ID to delete" },
+      },
+      required: ["id"],
+    },
+    schema: z.object({
+      id: z.string().min(1),
+    }),
+    async execute(args: { id: string }): Promise<string> {
+      store.delete(args.id);
+      return `Deleted task #${args.id}.`;
     },
   };
 }

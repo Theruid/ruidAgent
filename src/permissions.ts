@@ -30,6 +30,7 @@ const TIER_0_READ_ONLY_TOOLS = new Set([
   "task_list",
   "task_create",
   "task_update",
+  "task_delete",
   "rollback",
   "subagent_spawn",
   "subagent_parallel",

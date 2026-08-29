@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync, writeFileSync, mkdirSync, existsSync, unlinkSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import type { LLMMessage } from "./providers/types.js";
+import type { AgentTask } from "./tools/tasks.js";
 import { ensureConfigDir } from "./config.js";
 
 export const CURRENT_SESSION_SCHEMA_VERSION = 2;
@@ -14,6 +15,7 @@ export interface StoredSession {
   providerName: string;
   model: string;
   messages: LLMMessage[];
+  tasks?: AgentTask[];
   metadata?: Record<string, unknown>;
 }
 
@@ -33,6 +35,7 @@ export function migrateSession(raw: any): StoredSession {
     providerName: typeof raw?.providerName === "string" ? raw.providerName : "?",
     model: typeof raw?.model === "string" ? raw.model : "?",
     messages: Array.isArray(raw?.messages) ? raw.messages : [],
+    tasks: Array.isArray(raw?.tasks) ? raw.tasks : undefined,
     metadata: typeof raw?.metadata === "object" && raw.metadata !== null ? raw.metadata : {},
   };
 

@@ -12,6 +12,17 @@ export interface MCPServerConfig {
   trusted?: boolean;
 }
 
+export interface HookRule {
+  tool?: string; // tool name to match (e.g. "bash", "mcp__*", or "*" for all)
+  command: string; // shell command or script to execute
+  timeoutMs?: number; // default 10000ms
+}
+
+export interface HookConfig {
+  preToolUse?: HookRule[];
+  postToolUse?: HookRule[];
+}
+
 export interface AppConfig {
   providers: Record<string, ProviderConfig>;
   default: { provider: string; model: string };
@@ -20,6 +31,7 @@ export interface AppConfig {
     alwaysAsk?: string[];
   };
   mcpServers?: Record<string, MCPServerConfig>;
+  hooks?: HookConfig;
   maxIterations?: number;
 }
 
@@ -125,6 +137,7 @@ export function loadConfig(overrides?: Partial<AppConfig>): AppConfig {
     ...overrides,
     providers: mergedProviders,
     mcpServers: { ...(fileConfig.mcpServers ?? {}), ...(overrides?.mcpServers ?? {}) },
+    hooks: overrides?.hooks ?? fileConfig.hooks,
     default: overrides?.default ?? fileConfig.default ?? DEFAULT_CONFIG.default,
     permissions: { ...(fileConfig.permissions ?? {}), ...(overrides?.permissions ?? {}) },
   };

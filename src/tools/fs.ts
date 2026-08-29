@@ -15,7 +15,9 @@ export class Workspace {
     const normalized = path.normalize(abs);
     const rootNorm = path.normalize(this.root);
     if (normalized !== rootNorm && !normalized.startsWith(rootNorm + path.sep)) {
-      throw new Error(`Path "${p}" escapes workspace root ${this.root}`);
+      throw new Error(
+        `Path "${p}" escapes workspace root "${this.root}". File tools (read_file, write_file, edit_file) only operate inside the workspace root. Use relative paths within the workspace, or use the bash tool with absolute paths for operations outside the workspace root.`
+      );
     }
     return normalized;
   }
