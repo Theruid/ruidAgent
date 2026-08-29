@@ -107,12 +107,12 @@ export function startTui(options: TuiOptions): void {
 
   let customSkillCommands: CommandItem[] = [];
   skillManager.loadSkills().then((skills) => {
-    store.setSkillCount(skills.length);
     customSkillCommands = skills.map((s) => ({
       name: `/${s.name}`,
       args: s.args,
       description: `[Skill] ${s.description}`,
     }));
+    store.setCustomSkills(customSkillCommands);
   }).catch(() => {});
 
   // Instantiate and connect configured MCP servers

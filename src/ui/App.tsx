@@ -230,7 +230,7 @@ export function App({
           onSubmit={onSubmit}
           disabled={state.phase === "running" || Boolean(state.pendingPermission) || Boolean(state.updateInfo?.hasUpdate)}
           initialValue={state.inputDraft}
-          customCommands={customCommands}
+          customCommands={state.customSkills.length > 0 ? state.customSkills : customCommands}
           onPaletteChange={setPaletteOpen}
           onCycleMode={onCycleMode}
           onScrollUp={() => store.scrollUp(2)}

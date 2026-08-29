@@ -6,6 +6,7 @@ import { calculateCost } from "./utils/pricing.js";
 import { formatToolBadge } from "./utils/toolSummary.js";
 
 import type { UpdateInfo } from "../updater.js";
+import type { CommandItem } from "./components/CommandPalette.js";
 
 export type Phase = "idle" | "running" | "picker" | "wizard" | "model-picker" | "provider-picker";
 
@@ -66,6 +67,7 @@ export interface UIState {
   updateInfo: UpdateInfo | null;
   mcpServerCount: number;
   skillCount: number;
+  customSkills: CommandItem[];
   memoryCount: number;
 }
 
@@ -138,6 +140,7 @@ export class AgentUIStore {
       updateInfo: null,
       mcpServerCount: 0,
       skillCount: 0,
+      customSkills: [],
       memoryCount: 0,
     };
   }
@@ -207,6 +210,10 @@ export class AgentUIStore {
 
   setSkillCount(count: number): void {
     this.set({ skillCount: count }, true);
+  }
+
+  setCustomSkills(skills: CommandItem[]): void {
+    this.set({ customSkills: skills, skillCount: skills.length }, true);
   }
 
   setMemoryCount(count: number): void {
