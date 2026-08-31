@@ -10,6 +10,11 @@ describe("Structured Context Layering & Ephemeral Caching", () => {
     assert.strictEqual(blocks.length, 2);
     assert.strictEqual(blocks[0].cacheControl?.type, "ephemeral");
     assert.match(blocks[0].text, /<system>/);
+    assert.match(blocks[0].text, /<agent_identity>/);
+    assert.match(blocks[0].text, /You are RUID/);
+    assert.match(blocks[0].text, /Config Precedence/);
+    assert.match(blocks[0].text, /"mcpServers"/);
+    assert.match(blocks[0].text, /Never search for, inspect, or edit third-party application configurations/);
     assert.match(blocks[0].text, /<guidelines>/);
 
     assert.match(blocks[1].text, /<environment>/);
