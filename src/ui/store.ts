@@ -17,6 +17,13 @@ export interface ToolMeta {
   durationMs?: number;
 }
 
+export interface TurnReceipt {
+  filesChanged: number;
+  commandsRun: number;
+  durationMs: number;
+  costDelta: number;
+}
+
 export interface ViewMessage {
   id: number;
   kind: "user" | "assistant" | "tool";
@@ -28,6 +35,7 @@ export interface ViewMessage {
   /** Tool row still awaiting its result — shows a spinner. */
   pending?: boolean;
   toolMeta?: ToolMeta;
+  turnReceipt?: TurnReceipt;
 }
 
 export interface PendingPermission {
@@ -69,6 +77,7 @@ export interface UIState {
   skillCount: number;
   customSkills: CommandItem[];
   memoryCount: number;
+  activeAction: { name: string; detail?: string; startedAt: number } | null;
 }
 
 // Framework-free store so non-React code (agent loop callbacks) can push
@@ -103,6 +112,8 @@ export class AgentUIStore {
   private thoughtDurationMs: number | null = null;
   private nextId = 1;
   private toolStartTimes = new Map<string, number>();
+  private turnStartedAt = 0;
+  private turnCostBefore = 0;
 
   constructor(
     providerName: string,
@@ -142,6 +153,7 @@ export class AgentUIStore {
       skillCount: 0,
       customSkills: [],
       memoryCount: 0,
+      activeAction: null,
     };
   }
 
@@ -287,7 +299,9 @@ export class AgentUIStore {
     this.thoughtBuf = "";
     this.thoughtStartTime = null;
     this.thoughtDurationMs = null;
-    this.set({ phase: "running", streamingText: "", streamingThought: "", streamingThoughtDurationMs: undefined, notice: null, scrollOffset: 0 }, true);
+    this.turnStartedAt = Date.now();
+    this.turnCostBefore = this.state.sessionUsage.totalCost;
+    this.set({ phase: "running", streamingText: "", streamingThought: "", streamingThoughtDurationMs: undefined, notice: null, scrollOffset: 0, activeAction: null }, true);
   }
 
   addUserMessage(text: string): void {
@@ -305,7 +319,11 @@ export class AgentUIStore {
           this.thoughtDurationMs = Date.now() - this.thoughtStartTime;
         }
         this.streamBuf += e.text;
-        this.set({ streamingText: this.streamBuf, streamingThoughtDurationMs: this.thoughtDurationMs ?? undefined }, true);
+        this.set({
+          streamingText: this.streamBuf,
+          streamingThoughtDurationMs: this.thoughtDurationMs ?? undefined,
+          activeAction: this.state.activeAction?.name === "Generating response" ? this.state.activeAction : { name: "Generating response", startedAt: Date.now() },
+        }, true);
         break;
 
       case "thought_delta":
@@ -316,6 +334,7 @@ export class AgentUIStore {
         this.set({
           streamingThought: this.thoughtBuf,
           streamingThoughtDurationMs: Date.now() - this.thoughtStartTime,
+          activeAction: this.state.activeAction?.name === "Thinking" ? this.state.activeAction : { name: "Thinking", startedAt: Date.now() },
         }, true);
         break;
 
@@ -336,7 +355,7 @@ export class AgentUIStore {
           },
         };
         // Flush any buffered assistant text into its own row before the tool row.
-        const patch: Partial<UIState> = { messages: [...this.state.messages, msg], pendingPermission: null };
+        const patch: Partial<UIState> = { messages: [...this.state.messages, msg], pendingPermission: null, activeAction: { name: badge.title, detail: badge.detail, startedAt: Date.now() } };
         if (this.streamBuf) {
           patch.streamingText = "";
           this.commitStreamRow(patch);
@@ -376,7 +395,7 @@ export class AgentUIStore {
             },
           };
         }
-        this.set({ messages, pendingPermission: null }, true);
+        this.set({ messages, pendingPermission: null, activeAction: null }, true);
         break;
       }
 
@@ -489,6 +508,40 @@ export class AgentUIStore {
     if (error) patch.notice = error;
     this.stopFlush();
     this.dirty = false;
+
+    // Compute turn receipt: count file mutations and commands from this turn's tool messages
+    const MUTATING_TOOLS = new Set(["write_file", "edit_file"]);
+    const msgs = patch.messages ?? this.state.messages;
+    let filesChanged = 0;
+    let commandsRun = 0;
+    // Scan backwards from end to find tool messages belonging to this turn (after last user message)
+    let lastUserIdx = -1;
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      if (msgs[i].kind === "user") { lastUserIdx = i; break; }
+    }
+    for (let i = lastUserIdx + 1; i < msgs.length; i++) {
+      const tm = msgs[i];
+      if (tm.kind !== "tool" || tm.pending) continue;
+      if (tm.toolName && MUTATING_TOOLS.has(tm.toolName) && !tm.toolError) filesChanged++;
+      if (tm.toolName === "bash" && !tm.toolError) commandsRun++;
+    }
+
+    const durationMs = this.turnStartedAt ? Date.now() - this.turnStartedAt : 0;
+    const costDelta = this.state.sessionUsage.totalCost - this.turnCostBefore;
+
+    // Only append a receipt if something meaningful happened
+    if (filesChanged > 0 || commandsRun > 0) {
+      const receipt: TurnReceipt = { filesChanged, commandsRun, durationMs, costDelta };
+      const receiptMsg: ViewMessage = {
+        id: this.nextId++,
+        kind: "assistant",
+        text: "",
+        turnReceipt: receipt,
+      };
+      patch.messages = [...(patch.messages ?? this.state.messages), receiptMsg];
+    }
+
+    patch.activeAction = null;
     this.set(patch, true);
 
     // Keep only committed rows; caller decides what to do with history.

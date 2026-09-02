@@ -304,6 +304,13 @@ export function InputBox({
   );
 
   const lines = value ? value.split("\n") : [];
+  const isFolded = lines.length > 6;
+  const foldedHidden = isFolded ? lines.length - 3 : 0;
+
+  // When folded, show first 2 lines, a fold pill, and last line
+  const displayLines = isFolded
+    ? [...lines.slice(0, 2), null, lines[lines.length - 1]]
+    : lines;
 
   return (
     <Box flexDirection="column" marginTop={disabled ? 0 : undefined}>
@@ -319,14 +326,24 @@ export function InputBox({
         flexDirection="column"
         borderColor={shouldShowCmdPalette ? "cyan" : shouldShowFilePalette ? "yellow" : undefined}
       >
-        {lines.length === 0 ? (
+        {displayLines.length === 0 ? (
           <Box>
             <Text dimColor>{"> "} </Text>
             <Text dimColor>{placeholder}</Text>
           </Box>
         ) : (
-          lines.map((line, idx) => {
-            const isLast = idx === lines.length - 1;
+          displayLines.map((line, idx) => {
+            // Fold pill
+            if (line === null) {
+              return (
+                <Box key="fold-pill">
+                  <Text dimColor>  </Text>
+                  <Text color="cyan">… [{foldedHidden} lines hidden · Enter to send · Esc to clear] …</Text>
+                </Box>
+              );
+            }
+
+            const isLast = idx === displayLines.length - 1;
             const prefix = idx === 0 ? "> " : "… ";
             return (
               <Box key={idx}>

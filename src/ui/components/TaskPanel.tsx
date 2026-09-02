@@ -9,6 +9,24 @@ export function TaskPanel({ tasks }: { tasks: AgentTask[] }) {
 
   const total = tasks.length;
   const completedCount = tasks.filter((t) => t.status === "completed").length;
+  const allDone = total > 0 && completedCount === total;
+
+  if (allDone) {
+    return (
+      <Box
+        borderStyle="round"
+        borderColor="green"
+        paddingX={1}
+        marginBottom={1}
+        justifyContent="space-between"
+      >
+        <Text color="green" bold>
+          ✓ All tasks completed ({total}/{total})
+        </Text>
+        <Text dimColor>Plan finished</Text>
+      </Box>
+    );
+  }
 
   let startIndex = 0;
   if (total > MAX_VISIBLE_TASKS) {

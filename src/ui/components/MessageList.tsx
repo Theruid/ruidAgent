@@ -1,9 +1,16 @@
 import React, { memo } from "react";
 import { Box, Text } from "ink";
-import type { ViewMessage } from "../store.js";
+import type { ViewMessage, TurnReceipt } from "../store.js";
 import { wrapText } from "../utils/wrap.js";
 import { renderMarkdown } from "../utils/markdown.js";
 import { formatLatency } from "../utils/pricing.js";
+
+const READ_ONLY_TOOLS = new Set([
+  "read_file", "list_dir", "glob", "grep",
+  "git_status", "git_diff", "git_log",
+  "web_search", "web_fetch",
+  "task_list", "memory_recall", "memory_list",
+]);
 
 export interface RenderedLine {
   id: string;
@@ -20,6 +27,7 @@ export interface RenderedLine {
     | "streaming-header"
     | "streaming-thought"
     | "streaming-body"
+    | "turn-receipt"
     | "blank";
   text: string;
 }
@@ -47,6 +55,22 @@ export function compileLines(
         lines.push({ id: `u-b-${m.id}-${j}`, kind: "user-body", text: wrapped[j] });
       }
     } else if (m.kind === "assistant") {
+      // Turn receipt (compact stats line, no header)
+      if (m.turnReceipt) {
+        const r = m.turnReceipt;
+        const parts: string[] = [];
+        if (r.filesChanged > 0) parts.push(`${r.filesChanged} file${r.filesChanged === 1 ? "" : "s"} modified`);
+        if (r.commandsRun > 0) parts.push(`${r.commandsRun} command${r.commandsRun === 1 ? "" : "s"} run`);
+        if (r.durationMs > 0) parts.push(formatLatency(r.durationMs));
+        if (r.costDelta > 0) parts.push(`$${r.costDelta.toFixed(3)}`);
+        lines.push({
+          id: `receipt-${m.id}`,
+          kind: "turn-receipt",
+          text: `⚡ ${parts.join(" · ")}`,
+        });
+        continue;
+      }
+
       lines.push({ id: `a-h-${m.id}`, kind: "assistant-header", text: "agent" });
       if (m.thought) {
         const durStr = m.thoughtDurationMs ? `for ${formatLatency(m.thoughtDurationMs)}` : "completed";
@@ -63,6 +87,44 @@ export function compileLines(
         }
       }
     } else if (m.kind === "tool") {
+      // Check if this starts a run of 3+ consecutive successful read-only tools
+      const isReadOnly = !m.pending && !m.toolError && m.toolName && READ_ONLY_TOOLS.has(m.toolName);
+      if (isReadOnly) {
+        let runEnd = i;
+        while (
+          runEnd + 1 < messages.length &&
+          messages[runEnd + 1].kind === "tool" &&
+          !messages[runEnd + 1].pending &&
+          !messages[runEnd + 1].toolError &&
+          messages[runEnd + 1].toolName &&
+          READ_ONLY_TOOLS.has(messages[runEnd + 1].toolName!)
+        ) {
+          runEnd++;
+        }
+        const runLen = runEnd - i + 1;
+        if (runLen >= 3) {
+          // Collapse this run into a single summary line
+          const toolCounts = new Map<string, number>();
+          let totalDuration = 0;
+          for (let k = i; k <= runEnd; k++) {
+            const tm = messages[k];
+            const name = tm.toolMeta?.badgeTitle || tm.toolName || "tool";
+            toolCounts.set(name, (toolCounts.get(name) || 0) + 1);
+            if (tm.toolMeta?.durationMs) totalDuration += tm.toolMeta.durationMs;
+          }
+          const parts = Array.from(toolCounts.entries()).map(([name, count]) => `${count} ${name}`);
+          const durStr = totalDuration > 0 ? ` · ${formatLatency(totalDuration)}` : "";
+          lines.push({
+            id: `t-group-${m.id}`,
+            kind: "tool-success",
+            text: `✔ Explored ${runLen} files (${parts.join(", ")})${durStr}`,
+          });
+          i = runEnd; // skip past the group
+          continue;
+        }
+      }
+
+      // Render individual tool line (non-grouped)
       const toolName = m.toolMeta?.badgeTitle || m.toolName || "tool";
       const detail = m.toolMeta?.badgeDetail || "";
       const durationStr = m.toolMeta?.durationMs ? ` · ${formatLatency(m.toolMeta.durationMs)}` : "";
@@ -221,6 +283,14 @@ const MessageLine = memo(function MessageLine({ line }: { line: RenderedLine }) 
       return (
         <Box paddingLeft={2}>
           <Text color="red" dimColor>
+            {line.text}
+          </Text>
+        </Box>
+      );
+    case "turn-receipt":
+      return (
+        <Box paddingLeft={2}>
+          <Text color="cyan" dimColor>
             {line.text}
           </Text>
         </Box>

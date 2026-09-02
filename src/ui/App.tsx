@@ -168,7 +168,16 @@ export function App({
     overhead += 8;
   }
   if (state.tasks.length > 0) {
-    overhead += Math.min(6, state.tasks.length + 2);
+    const isCompleted = state.tasks.every((t) => t.status === "completed");
+    if (isCompleted) {
+      overhead += 3;
+    } else {
+      const visibleCount = Math.min(5, state.tasks.length);
+      const hasAbove = state.tasks.length > 5;
+      const hasBelow = state.tasks.length > 5;
+      // header (1) + border (2) + margin (1) + visible tasks + indicators
+      overhead += 4 + visibleCount + (hasAbove ? 1 : 0) + (hasBelow ? 1 : 0);
+    }
   }
 
   const viewportHeight = Math.max(5, rows - overhead);
@@ -243,7 +252,9 @@ export function App({
             !state.connected
               ? "Run /setup to connect a provider…"
               : state.phase === "running"
-                ? "Working… (Ctrl+C to interrupt)"
+                ? state.activeAction
+                  ? `${state.activeAction.name}${state.activeAction.detail ? `: ${state.activeAction.detail}` : ""}… (Ctrl+C to interrupt)`
+                  : "Working… (Ctrl+C to interrupt)"
                 : `Ask in [${state.mode.toUpperCase()}] mode… (Tab: mode, Ctrl+Enter: newline, @file, /help)`
           }
         />
