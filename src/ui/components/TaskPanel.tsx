@@ -35,9 +35,6 @@ export function TaskPanel({ tasks }: { tasks: AgentTask[] }) {
             <Text bold={task.status === "in_progress"} color={task.status === "completed" ? "gray" : undefined}>
               #{task.id} {task.subject}
             </Text>
-            {task.description && task.status === "in_progress" && (
-              <Text dimColor> ({task.description})</Text>
-            )}
           </Box>
         );
       })}
