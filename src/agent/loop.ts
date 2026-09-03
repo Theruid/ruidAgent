@@ -27,6 +27,7 @@ export interface LoopOptions {
   model: string;
   workspaceRoot?: string;
   initialPrompt?: string;
+  systemPrompt?: string;
   /** Prior conversation to continue (REPL multi-turn). */
   messages?: LLMMessage[];
   maxIterations?: number;
@@ -140,14 +141,16 @@ export async function runAgentLoop(options: LoopOptions): Promise<LLMMessage[]> 
   const skillsListing = skillManager.formatSystemPromptSkills(availableSkills);
   const repoMap = await generateRepoMap(ws.root, 40, 1200);
 
-  const systemBlocks = buildSystemPromptBlocks({
-    workspaceRoot: ws.root,
-    platform: process.platform,
-    mode: permissions.getMode?.() ?? "code",
-    memorySummary,
-    skillsListing,
-    repoMap,
-  });
+  const systemBlocks = options.systemPrompt
+    ? [{ type: "text" as const, text: options.systemPrompt }]
+    : buildSystemPromptBlocks({
+        workspaceRoot: ws.root,
+        platform: process.platform,
+        mode: permissions.getMode?.() ?? "code",
+        memorySummary,
+        skillsListing,
+        repoMap,
+      });
 
   // Track active stale_state failures per resource path
   const staleStateMap = new Map<string, StaleStateTrack>();

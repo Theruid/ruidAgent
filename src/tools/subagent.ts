@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { Workspace } from "./fs.js";
 import type { LLMProvider } from "../providers/types.js";
 import { runSubagent, type SubagentRole } from "../agent/subagent.js";
-import { parallel } from "../agent/orchestration.js";
+import { parallel, runEvaluatorOptimizer, workflowDAG } from "../agent/orchestration.js";
 import type { LoopEvent } from "../agent/loop.js";
 
 export function subagentTool(
@@ -172,3 +172,175 @@ export function subagentParallelTool(
     },
   };
 }
+
+export function subagentOptimizeTool(
+  ws: Workspace,
+  provider: LLMProvider,
+  model: string,
+  signal?: AbortSignal
+) {
+  return {
+    name: "subagent_optimize",
+    description:
+      "Run an Evaluator-Optimizer loop: spawns a coder agent to implement a solution, followed by an adversarial reviewer agent to verify correctness. If defects are found, feedback is looped back to the coder for up to max_iterations until verified.",
+    parameters: {
+      type: "object",
+      properties: {
+        task_prompt: {
+          type: "string",
+          description: "Instructions for the coder agent describing the implementation task",
+        },
+        max_iterations: {
+          type: "number",
+          description: "Max optimization cycles (default 3, max 5)",
+        },
+        isolate_worktree: {
+          type: "boolean",
+          description: "Run implementation in an isolated git worktree (default false)",
+        },
+      },
+      required: ["task_prompt"],
+    },
+    schema: z.object({
+      task_prompt: z.string().min(1),
+      max_iterations: z.number().int().min(1).max(5).optional().default(3),
+      isolate_worktree: z.boolean().optional().default(false),
+    }),
+    async execute(args: {
+      task_prompt: string;
+      max_iterations?: number;
+      isolate_worktree?: boolean;
+    }): Promise<string> {
+      if (signal?.aborted) {
+        throw new Error("Evaluator-Optimizer aborted by user");
+      }
+
+      const res = await runEvaluatorOptimizer(
+        {
+          coderPrompt: args.task_prompt,
+          maxIterations: args.max_iterations ?? 3,
+          isolateWorktree: args.isolate_worktree,
+        },
+        {
+          provider,
+          model,
+          workspaceRoot: ws.root,
+          signal,
+        }
+      );
+
+      return `[Evaluator-Optimizer ${res.passed ? "VERIFIED (PASSED)" : "FAILED"} in ${res.iterations} iteration(s)]:\n\nFinal Output:\n${res.finalOutput}`;
+    },
+  };
+}
+
+export function subagentWorkflowTool(
+  ws: Workspace,
+  provider: LLMProvider,
+  model: string,
+  signal?: AbortSignal
+) {
+  return {
+    name: "subagent_workflow",
+    description:
+      "Execute a multi-step dependency-aware DAG workflow where tasks run concurrently according to their dependencies and pass outputs to downstream tasks.",
+    parameters: {
+      type: "object",
+      properties: {
+        tasks: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              id: { type: "string", description: "Unique task identifier" },
+              role: {
+                type: "string",
+                enum: ["explore", "coder", "reviewer", "general"],
+                description: "Sub-agent role",
+              },
+              prompt: {
+                type: "string",
+                description: "Task prompt template. Can reference inputs with $inputs.<depId>",
+              },
+              depends_on: {
+                type: "array",
+                items: { type: "string" },
+                description: "List of prerequisite task IDs that must complete first",
+              },
+              isolate_worktree: {
+                type: "boolean",
+                description: "Run in isolated git worktree",
+              },
+            },
+            required: ["id", "role", "prompt"],
+          },
+          description: "List of DAG tasks with dependency relationships",
+        },
+        concurrency: {
+          type: "number",
+          description: "Max concurrent tasks (default 4)",
+        },
+      },
+      required: ["tasks"],
+    },
+    schema: z.object({
+      tasks: z.array(
+        z.object({
+          id: z.string().min(1),
+          role: z.enum(["explore", "coder", "reviewer", "general"]).default("general"),
+          prompt: z.string().min(1),
+          depends_on: z.array(z.string()).optional(),
+          isolate_worktree: z.boolean().optional().default(false),
+        })
+      ).min(1).max(10),
+      concurrency: z.number().int().min(1).max(10).optional().default(4),
+    }),
+    async execute(args: {
+      tasks: Array<{
+        id: string;
+        role: SubagentRole;
+        prompt: string;
+        depends_on?: string[];
+        isolate_worktree?: boolean;
+      }>;
+      concurrency?: number;
+    }): Promise<string> {
+      if (signal?.aborted) {
+        throw new Error("DAG workflow aborted by user");
+      }
+
+      const dagTasks = args.tasks.map((t) => ({
+        id: t.id,
+        role: t.role,
+        promptTemplate: (inputs: Record<string, string>) => {
+          let rendered = t.prompt;
+          for (const [depId, val] of Object.entries(inputs)) {
+            rendered = rendered.replace(new RegExp(`\\$inputs\\.${depId}`, "g"), val);
+          }
+          return rendered;
+        },
+        dependsOn: t.depends_on,
+        isolateWorktree: t.isolate_worktree,
+      }));
+
+      const res = await workflowDAG(dagTasks, {
+        provider,
+        model,
+        workspaceRoot: ws.root,
+        signal,
+        concurrency: args.concurrency ?? 4,
+      });
+
+      const outputLines: string[] = ["[Workflow DAG Execution Summary]:"];
+      for (const [id, out] of Object.entries(res.outputs)) {
+        outputLines.push(`\n▶ Task [${id}] Output:\n${out}`);
+      }
+      for (const [id, err] of Object.entries(res.errors)) {
+        outputLines.push(`\n✖ Task [${id}] Error: ${err}`);
+      }
+
+      return outputLines.join("\n");
+    },
+  };
+}
+

@@ -29,14 +29,14 @@ export function buildSubagentSystemPrompt(
 ): string {
   const baseHeader = `You are a specialized sub-agent [ROLE: ${role.toUpperCase()}] working in ${workspaceRoot} on ${platform}.
 Your mission is to perform a focused task delegated by the main orchestrator agent.
-Be thorough in tool usage, and concise in your final output. Return ONLY the direct findings/results without filler.`;
+Be thorough in tool usage, and concise in your final output. Return ONLY the direct findings/results without conversational preamble.`;
 
   let schemaInstructions = "";
   if (outputSchema && !isNativeStructuredOutput) {
     schemaInstructions = `\n\n<structured_output_requirement>
 You MUST return your final result conforming to this JSON Schema:
 ${JSON.stringify(outputSchema, null, 2)}
-Conclude by outputting ONLY the validated JSON object.
+Output ONLY raw, parseable JSON conforming to this schema without markdown code blocks (\`\`\`json) or conversational text.
 </structured_output_requirement>`;
   }
 
@@ -47,31 +47,33 @@ Conclude by outputting ONLY the validated JSON object.
 Role Guidelines:
 - You are a read-only research specialist.
 - Use read_file, glob, grep, list_dir, web_search, web_fetch, git_status, and git_log to investigate code, find definitions, lookup docs, and trace dependencies.
-- Do not attempt to modify files.
-- Summarize your exact findings, file paths, line numbers, and patterns discovered.${schemaInstructions}`;
+- Do NOT attempt to modify files or run destructive commands.
+- Summarize exact findings with explicit file paths and line numbers.${schemaInstructions}`;
 
     case "reviewer":
       return `${baseHeader}
 
 Role Guidelines:
 - You are an adversarial code reviewer and verification specialist.
-- Inspect changes via git_diff, check modified files, and run tests or linters via bash if needed.
-- Report any syntax issues, bugs, regressions, or test failures clearly.${schemaInstructions}`;
+- Inspect changes via git_diff, check modified files, and run test suites or linters via bash if available.
+- Specifically evaluate: correctness, edge cases, security flaws, performance regressions, and broken test assertions.
+- Conclude with a structured verdict: specify whether the changes pass (PASS) or fail (FAIL with actionable fix feedback).${schemaInstructions}`;
 
     case "coder":
       return `${baseHeader}
 
 Role Guidelines:
 - You are an implementation specialist.
-- Read files carefully before modifying them with edit_file or write_file.
-- Make focused, precise edits and verify changes when done.${schemaInstructions}`;
+- Always inspect and read files before making edits with edit_file or write_file to preserve exact indentation.
+- Strict Invariant: NEVER leave placeholder comments like "// TODO", "// ... rest of code", or uncompleted stubs. Write complete, working code.
+- Verify your changes: run test suites or syntax checks where available to ensure no regressions.${schemaInstructions}`;
 
     case "general":
     default:
       return `${baseHeader}
 
 Role Guidelines:
-- Accomplish the task using all available tools and provide a clear final summary.${schemaInstructions}`;
+- Accomplish the delegated task systematically using available tools and provide a clear final summary.${schemaInstructions}`;
   }
 }
 
@@ -136,6 +138,7 @@ export async function runSubagent(opts: SubagentOptions): Promise<string> {
       model: opts.model,
       workspaceRoot: ws.root,
       initialPrompt: opts.prompt,
+      systemPrompt: initialSystemPrompt,
       maxIterations,
       permissions: permissions.manager,
       signal: opts.signal,

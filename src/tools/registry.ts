@@ -6,7 +6,7 @@ import { gitStatusTool, gitDiffTool, gitLogTool } from "./git.js";
 import { TaskStore, taskCreateTool, taskUpdateTool, taskDeleteTool, taskListTool } from "./tasks.js";
 import { SnapshotManager, rollbackTool } from "./snapshot.js";
 import { GitCheckpointManager, gitRollbackTool } from "./gitRollback.js";
-import { subagentTool, subagentParallelTool } from "./subagent.js";
+import { subagentTool, subagentParallelTool, subagentOptimizeTool, subagentWorkflowTool } from "./subagent.js";
 import { webSearchTool, webFetchTool } from "./web.js";
 import { memoryStoreTool, memoryRecallTool, memoryListTool, memoryForgetTool } from "./memory.js";
 import { skillRunTool } from "./skill.js";
@@ -128,6 +128,8 @@ export async function buildRegistry(
       ? [
           { ...subagentTool(ws, provider, model, signal, onSubagentEvent), requiresPermission: false },
           { ...subagentParallelTool(ws, provider, model, signal), requiresPermission: false },
+          { ...subagentOptimizeTool(ws, provider, model, signal), requiresPermission: false },
+          { ...subagentWorkflowTool(ws, provider, model, signal), requiresPermission: false },
         ]
       : []),
     { ...writeFileTool(ws, snapshots), requiresPermission: true },

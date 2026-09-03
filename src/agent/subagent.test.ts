@@ -1,8 +1,12 @@
 import { describe, it } from "node:test";
 import assert from "node:assert";
 import { buildSubagentSystemPrompt } from "./subagent.js";
-import { pipeline, parallel } from "./orchestration.js";
-import { subagentParallelTool } from "../tools/subagent.js";
+import { pipeline, parallel, runEvaluatorOptimizer, workflowDAG } from "./orchestration.js";
+import {
+  subagentParallelTool,
+  subagentOptimizeTool,
+  subagentWorkflowTool,
+} from "../tools/subagent.js";
 import { Workspace } from "../tools/fs.js";
 import type { LLMProvider } from "../providers/types.js";
 
@@ -22,16 +26,28 @@ describe("Subagents & Orchestration Primitives", () => {
   });
 
   it("omits prompt boilerplate when provider supports native structured output", () => {
-    const prompt = buildSubagentSystemPrompt("explore", "/test/workspace", "linux", {
-      type: "object",
-      properties: {
-        findings: { type: "array", items: { type: "string" } },
+    const prompt = buildSubagentSystemPrompt(
+      "explore",
+      "/test/workspace",
+      "linux",
+      {
+        type: "object",
+        properties: {
+          findings: { type: "array", items: { type: "string" } },
+        },
+        required: ["findings"],
       },
-      required: ["findings"],
-    }, true);
+      true
+    );
 
     assert.match(prompt, /ROLE: EXPLORE/);
     assert.doesNotMatch(prompt, /<structured_output_requirement>/);
+  });
+
+  it("enforces strict invariants in coder prompt", () => {
+    const prompt = buildSubagentSystemPrompt("coder", "/test/workspace", "win32");
+    assert.match(prompt, /ROLE: CODER/);
+    assert.match(prompt, /Strict Invariant: NEVER leave placeholder comments/);
   });
 
   it("executes sequential pipeline chain with mocked provider", async () => {
@@ -129,5 +145,59 @@ describe("Subagents & Orchestration Primitives", () => {
     assert.match(result, /audit\(fileA\.ts\)/);
     assert.match(result, /Task #2 \(EXPLORE\) Result/);
     assert.match(result, /audit\(fileB\.ts\)/);
+  });
+
+  it("executes subagent_optimize tool and reports verdict", async () => {
+    const mockProvider: LLMProvider = {
+      name: "mock-llm",
+      config: { type: "openai" },
+      async *complete(req) {
+        const sys = typeof req.system === "string" ? req.system : req.system.map((s) => s.text).join(" ");
+        if (sys.includes("ROLE: REVIEWER")) {
+          yield { type: "text_delta", text: "VERDICT: PASS" };
+        } else {
+          yield { type: "text_delta", text: "implemented solution" };
+        }
+        yield { type: "message_delta", stopReason: "stop" };
+      },
+    };
+
+    const ws = new Workspace(process.cwd());
+    const tool = subagentOptimizeTool(ws, mockProvider, "mock-model");
+    const result = await tool.execute({
+      task_prompt: "Write sort function",
+    });
+
+    assert.match(result, /Evaluator-Optimizer VERIFIED \(PASSED\)/);
+    assert.match(result, /implemented solution/);
+  });
+
+  it("executes subagent_workflow tool with dependencies", async () => {
+    const mockProvider: LLMProvider = {
+      name: "mock-llm",
+      config: { type: "openai" },
+      async *complete(req) {
+        const lastUser = req.messages.find((m) => m.role === "user");
+        const userText =
+          lastUser?.content.find((c): c is Extract<typeof c, { type: "text" }> => c.type === "text")
+            ?.text ?? "";
+        yield { type: "text_delta", text: `res(${userText})` };
+        yield { type: "message_delta", stopReason: "stop" };
+      },
+    };
+
+    const ws = new Workspace(process.cwd());
+    const tool = subagentWorkflowTool(ws, mockProvider, "mock-model");
+    const result = await tool.execute({
+      tasks: [
+        { id: "step1", role: "explore", prompt: "read specs" },
+        { id: "step2", role: "coder", prompt: "build according to $inputs.step1", depends_on: ["step1"] },
+      ],
+    });
+
+    assert.match(result, /Task \[step1\] Output/);
+    assert.match(result, /res\(read specs\)/);
+    assert.match(result, /Task \[step2\] Output/);
+    assert.match(result, /res\(build according to res\(read specs\)\)/);
   });
 });
