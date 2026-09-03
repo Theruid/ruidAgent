@@ -114,7 +114,19 @@ export function parseRipgrepLine(line: string, ws: Workspace): string {
   const match = line.match(/^(?:([a-zA-Z]:[\\/][^:]*|[^:]+)):(\d+):(.*)$/);
   if (!match) return line;
   const [, fileAbs, lineNum, text] = match;
-  const rel = ws.relative(fileAbs).replace(/\\/g, "/");
+
+  const normFile = fileAbs.replace(/\\/g, "/");
+  const normRoot = ws.root.replace(/\\/g, "/").replace(/\/+$/, "");
+
+  let rel: string;
+  if (normFile.startsWith(normRoot + "/")) {
+    rel = normFile.slice(normRoot.length + 1);
+  } else if (normFile === normRoot) {
+    rel = ".";
+  } else {
+    rel = ws.relative(fileAbs).replace(/\\/g, "/");
+  }
+
   return `${rel}:${lineNum}: ${text.trim()}`;
 }
 
