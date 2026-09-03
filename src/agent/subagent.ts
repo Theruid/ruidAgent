@@ -16,6 +16,7 @@ export interface SubagentOptions {
   outputSchema?: Record<string, unknown>;
   isolateWorktree?: boolean;
   onProgress?: (text: string) => void;
+  onEvent?: (event: LoopEvent) => void;
   signal?: AbortSignal;
 }
 
@@ -140,6 +141,7 @@ export async function runSubagent(opts: SubagentOptions): Promise<string> {
       signal: opts.signal,
       onEvent: (event) => {
         events.push(event);
+        opts.onEvent?.(event);
         if (event.type === "text_delta") {
           opts.onProgress?.(event.text);
         }

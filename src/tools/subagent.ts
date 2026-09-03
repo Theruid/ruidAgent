@@ -3,12 +3,14 @@ import type { Workspace } from "./fs.js";
 import type { LLMProvider } from "../providers/types.js";
 import { runSubagent, type SubagentRole } from "../agent/subagent.js";
 import { parallel } from "../agent/orchestration.js";
+import type { LoopEvent } from "../agent/loop.js";
 
 export function subagentTool(
   ws: Workspace,
   provider: LLMProvider,
   model: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  onEvent?: (event: LoopEvent) => void
 ) {
   return {
     name: "subagent_spawn",
@@ -70,6 +72,7 @@ export function subagentTool(
         isolateWorktree: args.isolate_worktree,
         maxIterations: args.maxIterations ?? 12,
         signal,
+        onEvent,
       });
 
       return `[Sub-Agent (${args.role.toUpperCase()}) Result]:\n${result}`;

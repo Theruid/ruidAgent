@@ -14,6 +14,7 @@ import type { MemoryManager } from "../memory/manager.js";
 import type { SkillManager } from "../skills/loader.js";
 import type { ToolDef, LLMProvider } from "../providers/types.js";
 import type { MCPClient } from "../mcp/client.js";
+import type { LoopEvent } from "../agent/loop.js";
 
 export interface AgentTool {
   name: string;
@@ -37,6 +38,7 @@ export interface BuildRegistryOptions {
   signal?: AbortSignal;
   processManager?: ProcessManager;
   onBashChunk?: (chunk: string, stream: "stdout" | "stderr") => void;
+  onSubagentEvent?: (event: LoopEvent) => void;
   mcpClients?: MCPClient[];
 }
 
@@ -63,6 +65,7 @@ export async function buildRegistry(
   let signal: AbortSignal | undefined;
   let processManager: ProcessManager;
   let onBashChunk: ((chunk: string, stream: "stdout" | "stderr") => void) | undefined;
+  let onSubagentEvent: ((event: LoopEvent) => void) | undefined;
   let mcpClients: MCPClient[];
 
   if ("workspace" in optionsOrWs) {
@@ -77,6 +80,7 @@ export async function buildRegistry(
     signal = optionsOrWs.signal;
     processManager = optionsOrWs.processManager ?? new ProcessManager();
     onBashChunk = optionsOrWs.onBashChunk;
+    onSubagentEvent = optionsOrWs.onSubagentEvent;
     mcpClients = optionsOrWs.mcpClients ?? [];
   } else {
     ws = optionsOrWs;
@@ -122,7 +126,7 @@ export async function buildRegistry(
     },
     ...(provider && model
       ? [
-          { ...subagentTool(ws, provider, model, signal), requiresPermission: false },
+          { ...subagentTool(ws, provider, model, signal, onSubagentEvent), requiresPermission: false },
           { ...subagentParallelTool(ws, provider, model, signal), requiresPermission: false },
         ]
       : []),

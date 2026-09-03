@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert";
-import { parseStream, translateMessage, listModels, createOpenAIProvider } from "./openai.js";
+import { parseStream, translateMessage, translateMessageToOpenAI, listModels, createOpenAIProvider } from "./openai.js";
 import type { LLMMessage } from "./types.js";
 import http from "node:http";
 
@@ -20,6 +20,31 @@ describe("OpenAI Provider & Adapter", () => {
     assert.strictEqual(translated.tool_calls?.length, 1);
     assert.strictEqual(translated.tool_calls[0].id, "call_abc");
     assert.strictEqual(translated.tool_calls[0].function.name, "bash");
+  });
+
+  it("translates multiple parallel tool results into discrete tool messages", () => {
+    const userMsg: LLMMessage = {
+      role: "user",
+      content: [
+        { type: "tool_result", toolCallId: "call_1", content: "file content 1", isError: false },
+        { type: "tool_result", toolCallId: "call_2", content: "file content 2", isError: false },
+        { type: "tool_result", toolCallId: "call_3", content: "file content 3", isError: true },
+      ],
+    };
+
+    const translated = translateMessageToOpenAI(userMsg);
+    assert.strictEqual(translated.length, 3);
+    assert.strictEqual(translated[0].role, "tool");
+    assert.strictEqual(translated[0].tool_call_id, "call_1");
+    assert.strictEqual(translated[0].content, "file content 1");
+
+    assert.strictEqual(translated[1].role, "tool");
+    assert.strictEqual(translated[1].tool_call_id, "call_2");
+    assert.strictEqual(translated[1].content, "file content 2");
+
+    assert.strictEqual(translated[2].role, "tool");
+    assert.strictEqual(translated[2].tool_call_id, "call_3");
+    assert.strictEqual(translated[2].content, "file content 3");
   });
 
   it("fetches and dedupes models list from /v1/models endpoint", async () => {

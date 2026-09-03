@@ -94,7 +94,7 @@ export function createOpenAIProvider(config: ProviderConfig): LLMProvider {
         stream_options: { include_usage: true },
         messages: [
           { role: "system", content: systemContent },
-          ...req.messages.map(translateMessage),
+          ...req.messages.flatMap(translateMessageToOpenAI),
         ],
       };
 
@@ -178,7 +178,7 @@ export function createOpenAIProvider(config: ProviderConfig): LLMProvider {
   };
 }
 
-export function translateMessage(m: LLMMessage): Record<string, unknown> {
+export function translateMessageToOpenAI(m: LLMMessage): Array<Record<string, unknown>> {
   if (m.role === "assistant") {
     const text = m.content
       .filter((c): c is Extract<typeof c, { type: "text" }> => c.type === "text")
@@ -195,31 +195,46 @@ export function translateMessage(m: LLMMessage): Record<string, unknown> {
           ]
         : [],
     );
-    return {
-      role: "assistant",
-      ...(text ? { content: text } : {}),
-      ...(toolCalls.length ? { tool_calls: toolCalls } : {}),
-    };
+    return [
+      {
+        role: "assistant",
+        ...(text ? { content: text } : {}),
+        ...(toolCalls.length ? { tool_calls: toolCalls } : {}),
+      },
+    ];
   }
 
-  // User-role message. The OpenAI protocol requires each tool result to be
-  // its own role=tool message, so a user message containing multiple results
-  // (or mixed with text) can't be expressed — the loop guarantees one result
-  // per user message for this adapter's benefit.
-  const first = m.content[0];
-  if (first?.type === "tool_result") {
-    return {
+  // User-role message can contain text, multiple tool_results, or both.
+  // In the OpenAI protocol, each tool result MUST be its own discrete role="tool" message.
+  const toolResults = m.content.filter((c): c is Extract<typeof c, { type: "tool_result" }> => c.type === "tool_result");
+  const textBlocks = m.content.filter((c): c is Extract<typeof c, { type: "text" }> => c.type === "text");
+
+  const results: Array<Record<string, unknown>> = [];
+
+  // Emit each tool result as a discrete message
+  for (const tr of toolResults) {
+    results.push({
       role: "tool",
-      tool_call_id: first.toolCallId,
-      content: first.content,
-    };
+      tool_call_id: tr.toolCallId,
+      content: tr.content,
+    });
   }
 
-  const text = m.content
-    .filter((c): c is Extract<typeof c, { type: "text" }> => c.type === "text")
-    .map((c) => c.text)
-    .join("\n");
-  return { role: "user", content: text || "(empty)" };
+  // If there is also text in this user turn, emit it as a user message
+  if (textBlocks.length > 0 || results.length === 0) {
+    const text = textBlocks.map((c) => c.text).join("\n");
+    results.push({
+      role: "user",
+      content: text || "(empty)",
+    });
+  }
+
+  return results;
+}
+
+export function translateMessage(m: LLMMessage): Record<string, unknown> {
+  const translated = translateMessageToOpenAI(m);
+  return translated[0] ?? { role: "user", content: "(empty)" };
 }
 
 export async function* parseStream(

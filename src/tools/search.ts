@@ -108,6 +108,16 @@ export function grepTool(ws: Workspace) {
   };
 }
 
+export function parseRipgrepLine(line: string, ws: Workspace): string {
+  // Format is <file>:<line>:<text>
+  // On Windows, absolute path can start with drive letter e.g. C:\path\file.ts or C:/path/file.ts
+  const match = line.match(/^(?:([a-zA-Z]:[\\/][^:]*|[^:]+)):(\d+):(.*)$/);
+  if (!match) return line;
+  const [, fileAbs, lineNum, text] = match;
+  const rel = ws.relative(fileAbs).replace(/\\/g, "/");
+  return `${rel}:${lineNum}: ${text.trim()}`;
+}
+
 async function executeRipgrep(
   ws: Workspace,
   rgPath: string,
@@ -168,15 +178,7 @@ async function executeRipgrep(
 
       const formatted = lines
         .slice(offset, offset + limit)
-        .map((line) => {
-          // Parse ripgrep output line: <file>:<line>:<text>
-          // Note that Windows drive letters have a colon after the drive (e.g. C:\path:12:text)
-          const match = line.match(/^(?:([a-zA-Z]:[\\/][^:]+|[^:]+)):(\d+):(.*)$/);
-          if (!match) return line;
-          const [, fileAbs, lineNum, text] = match;
-          const rel = ws.relative(fileAbs);
-          return `${rel}:${lineNum}: ${text.trim()}`;
-        });
+        .map((line) => parseRipgrepLine(line, ws));
 
       const truncated = lines.length > offset + limit ? `\n(truncated at ${limit} results)` : "";
       resolve(formatted.join("\n") + truncated);

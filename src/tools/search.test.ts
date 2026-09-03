@@ -4,7 +4,7 @@ import { promises as fs } from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import { Workspace } from "./fs.js";
-import { grepTool } from "./search.js";
+import { grepTool, parseRipgrepLine } from "./search.js";
 
 describe("Search Engine (Ripgrep & Fallback)", () => {
   let tmpDir: string;
@@ -35,6 +35,15 @@ describe("Search Engine (Ripgrep & Fallback)", () => {
     } catch {
       // ignore
     }
+  });
+
+  it("parses ripgrep output line across Windows and POSIX path formats", () => {
+    const mockWs = new Workspace("C:/workspace/my-app");
+    const lineWin = "C:\\workspace\\my-app\\src\\index.ts:42:const a = 1;";
+    assert.strictEqual(parseRipgrepLine(lineWin, mockWs), "src/index.ts:42: const a = 1;");
+
+    const lineWinFwd = "C:/workspace/my-app/src/sub/file.ts:15:const url = \"http://localhost:3000\";";
+    assert.strictEqual(parseRipgrepLine(lineWinFwd, mockWs), "src/sub/file.ts:15: const url = \"http://localhost:3000\";");
   });
 
   it("finds occurrences across workspace files", async () => {

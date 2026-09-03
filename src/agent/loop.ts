@@ -20,6 +20,7 @@ import type { HookConfig } from "../config.js";
 import { runHooks } from "../hooks.js";
 import { MemoryManager } from "../memory/manager.js";
 import { SkillManager } from "../skills/loader.js";
+import { generateRepoMap } from "./repomap.js";
 
 export interface LoopOptions {
   provider: LLMProvider;
@@ -67,8 +68,9 @@ import {
   type FailureClassification,
   classifyToolFailure,
   type StaleStateTrack,
+  normalizeResourcePath,
 } from "./staleState.js";
-export { type FailureClassification, classifyToolFailure, type StaleStateTrack } from "./staleState.js";
+export { type FailureClassification, classifyToolFailure, type StaleStateTrack, normalizeResourcePath } from "./staleState.js";
 
 // Runs the agentic loop to completion and returns the full message history
 // so the REPL can continue the conversation across turns.
@@ -94,6 +96,7 @@ export async function runAgentLoop(options: LoopOptions): Promise<LLMMessage[]> 
     model: options.model,
     signal: options.signal,
     processManager,
+    onSubagentEvent: options.onEvent,
     mcpClients: options.mcpClients ?? [],
   });
 
@@ -135,6 +138,7 @@ export async function runAgentLoop(options: LoopOptions): Promise<LLMMessage[]> 
   const memorySummary = await memoryManager.getSystemPromptSummary(200);
   const availableSkills = await skillManager.loadSkills();
   const skillsListing = skillManager.formatSystemPromptSkills(availableSkills);
+  const repoMap = await generateRepoMap(ws.root, 40, 1200);
 
   const systemBlocks = buildSystemPromptBlocks({
     workspaceRoot: ws.root,
@@ -142,6 +146,7 @@ export async function runAgentLoop(options: LoopOptions): Promise<LLMMessage[]> 
     mode: permissions.getMode?.() ?? "code",
     memorySummary,
     skillsListing,
+    repoMap,
   });
 
   // Track active stale_state failures per resource path
@@ -307,7 +312,8 @@ export async function runAgentLoop(options: LoopOptions): Promise<LLMMessage[]> 
         }
 
         const rawInputJson = JSON.stringify(call.input ?? {});
-        const targetPath = (call.input as any)?.path as string | undefined;
+        const rawPath = (call.input as any)?.path as string | undefined;
+        const targetPath = rawPath ? normalizeResourcePath(rawPath, ws.root) : undefined;
         const trackKey = targetPath ?? call.name;
         const track = staleStateMap.get(trackKey);
 

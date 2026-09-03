@@ -35,6 +35,7 @@ export interface SystemPromptContext {
   mode?: AgentMode;
   memorySummary?: string | null;
   skillsListing?: string | null;
+  repoMap?: string | null;
 }
 
 export function buildSystemPromptBlocks(
@@ -47,6 +48,7 @@ export function buildSystemPromptBlocks(
   let mode: AgentMode;
   let memorySummary: string | null = null;
   let skillsListing: string | null = null;
+  let repoMap: string | null = null;
 
   if (typeof workspaceRootOrContext === "object") {
     workspaceRoot = workspaceRootOrContext.workspaceRoot;
@@ -54,6 +56,7 @@ export function buildSystemPromptBlocks(
     mode = workspaceRootOrContext.mode ?? "code";
     memorySummary = workspaceRootOrContext.memorySummary ?? null;
     skillsListing = workspaceRootOrContext.skillsListing ?? null;
+    repoMap = workspaceRootOrContext.repoMap ?? null;
   } else {
     workspaceRoot = workspaceRootOrContext;
     platform = platformArg ?? process.platform;
@@ -129,8 +132,11 @@ ${modeGuideline}
 
   const skillsBlockText = skillsListing ? `${skillsListing}` : "";
 
+  const repoMapBlockText = repoMap ? `${repoMap}` : "";
+
   const dynamicSections = [
     environmentText,
+    repoMapBlockText,
     memoryBlockText,
     skillsBlockText,
     customInstructionsText,

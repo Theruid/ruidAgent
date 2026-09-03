@@ -69,6 +69,7 @@ export function readFileTool(ws: Workspace) {
 }
 
 import type { SnapshotManager } from "./snapshot.js";
+import { checkFileSyntax } from "./diagnostics.js";
 
 export function writeFileTool(ws: Workspace, snapshots?: SnapshotManager) {
   return {
@@ -94,7 +95,11 @@ export function writeFileTool(ws: Workspace, snapshots?: SnapshotManager) {
       await fs.mkdir(path.dirname(abs), { recursive: true });
       await fs.writeFile(abs, args.content, "utf8");
       const lineCount = args.content.split("\n").length;
-      return `Wrote ${lineCount} lines to ${rel}`;
+      const diag = checkFileSyntax(rel, args.content);
+      const diagWarning = diag.hasErrors
+        ? `\n\n[Diagnostic Warning in ${rel}]:\n${diag.messages.join("\n")}`
+        : "";
+      return `Wrote ${lineCount} lines to ${rel}${diagWarning}`;
     },
   };
 }
@@ -147,7 +152,11 @@ export function editFileTool(ws: Workspace, snapshots?: SnapshotManager) {
         ? raw.split(args.old_string).join(args.new_string)
         : raw.replace(args.old_string, args.new_string);
       await fs.writeFile(abs, updated, "utf8");
-      return `Edited ${rel} (${occurrences} replacement${occurrences > 1 ? "s" : ""})`;
+      const diag = checkFileSyntax(rel, updated);
+      const diagWarning = diag.hasErrors
+        ? `\n\n[Diagnostic Warning in ${rel}]:\n${diag.messages.join("\n")}`
+        : "";
+      return `Edited ${rel} (${occurrences} replacement${occurrences > 1 ? "s" : ""})${diagWarning}`;
     },
   };
 }

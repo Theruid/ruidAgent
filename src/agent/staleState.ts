@@ -1,3 +1,5 @@
+import * as path from "node:path";
+
 export type FailureClassification = "transient" | "permanent" | "stale_state";
 
 export const STALE_STATE_SIGNATURES = [
@@ -15,6 +17,24 @@ export function classifyToolFailure(errorMessage: string): FailureClassification
     }
   }
   return "transient";
+}
+
+/**
+ * Normalizes a file/resource path to a canonical relative forward-slash format.
+ */
+export function normalizeResourcePath(filePath: string, workspaceRoot?: string): string {
+  if (!filePath) return "";
+  let unified = filePath.replace(/\\/g, "/").trim();
+  if (workspaceRoot) {
+    const wsUnified = workspaceRoot.replace(/\\/g, "/");
+    if (unified.startsWith(wsUnified)) {
+      unified = path.relative(wsUnified, unified).replace(/\\/g, "/");
+    }
+  }
+  if (unified.startsWith("./")) {
+    unified = unified.slice(2);
+  }
+  return path.normalize(unified).replace(/\\/g, "/");
 }
 
 export interface StaleStateTrack {

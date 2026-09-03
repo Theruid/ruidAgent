@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
-import { createWorktree } from "./worktree.js";
+import { createWorktree, sweepOrphanedWorktrees } from "./worktree.js";
 
 describe("Git Worktree Isolation", () => {
   let tmpRepo: string;
@@ -39,5 +39,10 @@ describe("Git Worktree Isolation", () => {
 
     await wt.cleanup();
     assert.strictEqual(existsSync(wt.path), false);
+  });
+
+  it("sweeps orphaned worktrees safely without throwing", async () => {
+    const res = await sweepOrphanedWorktrees(tmpRepo);
+    assert.strictEqual(typeof res.cleanedCount, "number");
   });
 });

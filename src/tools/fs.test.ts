@@ -82,6 +82,13 @@ describe("Workspace & Filesystem Tools (fs.ts)", () => {
     assert(globRes.includes("sample.txt"));
   });
 
+  it("detects syntax diagnostic errors on invalid code writes", async () => {
+    const write = writeFileTool(ws);
+    const brokenCode = "export function broken( { return 1;";
+    const res = await write.execute({ path: "broken.ts", content: brokenCode });
+    assert(res.includes("Diagnostic Warning in broken.ts"));
+  });
+
   it("transforms glob patterns to regex correctly", () => {
     const regex = globPatternToRegex("src/**/*.ts");
     assert(regex.test("src/agent/loop.ts"));

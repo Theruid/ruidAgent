@@ -54,6 +54,18 @@ describe("Granular Permissions & Safety Risk Tiers", () => {
     const dangerousRm = classifyBashCommand("rm -rf /tmp/data");
     assert.strictEqual(dangerousRm.tier, 4);
     assert.strictEqual(dangerousRm.isSafe, false);
+
+    const redirectOut = classifyBashCommand("ls > output.txt");
+    assert.strictEqual(redirectOut.tier, 3);
+    assert.strictEqual(redirectOut.isSafe, false);
+
+    const pipeTee = classifyBashCommand("cat foo.txt | tee bar.txt");
+    assert.strictEqual(pipeTee.tier, 3);
+    assert.strictEqual(pipeTee.isSafe, false);
+
+    const multiLine = classifyBashCommand("ls\nrm file.txt");
+    assert.strictEqual(multiLine.tier, 3);
+    assert.strictEqual(multiLine.isSafe, false);
   });
 
   it("enforces plan mode restrictions (allows Tier 0/2, denies mutating)", async () => {

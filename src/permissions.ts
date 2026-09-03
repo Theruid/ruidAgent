@@ -75,11 +75,16 @@ export function isPathSensitive(filePath: string): boolean {
 export function classifyBashCommand(command: string): { isSafe: boolean; tier: RiskTier } {
   const trimmed = command.trim();
 
-  // Tier 4: Explicit dangerous commands or subshell evasions
+  // Tier 4: Explicit dangerous commands or destructive operations
   for (const dangerous of DANGEROUS_COMMAND_SUBSTRINGS) {
     if (trimmed.toLowerCase().includes(dangerous.toLowerCase())) {
       return { isSafe: false, tier: 4 };
     }
+  }
+
+  // Check for shell redirection operators (> or >> or &>) or piping into mutating utilities
+  if (/>|>>|&>|\|\s*(?:tee|sed|awk|node|python|bash|sh|powershell|cmd)\b/i.test(trimmed)) {
+    return { isSafe: false, tier: 3 };
   }
 
   // Check subshell substitutions / evals / base64 pipes (UX heuristic classifier)
@@ -87,14 +92,14 @@ export function classifyBashCommand(command: string): { isSafe: boolean; tier: R
     return { isSafe: false, tier: 3 };
   }
 
-  // Check for command chains
-  const subCommands = trimmed.split(/&&|\|\||;/).map((c) => c.trim()).filter(Boolean);
+  // Check for command chains and newline separators
+  const subCommands = trimmed.split(/&&|\|\||;|\r?\n/).map((c) => c.trim()).filter(Boolean);
   let allSafe = subCommands.length > 0;
 
   for (const sub of subCommands) {
     const tokens = sub.split(/\s+/);
     const cmdName = tokens[0]?.toLowerCase() || "";
-    const isGitRead = (cmdName === "git" && (tokens[1] === "status" || tokens[1] === "diff" || tokens[1] === "log" || tokens[1] === "branch"));
+    const isGitRead = (cmdName === "git" && (tokens[1] === "status" || tokens[1] === "diff" || tokens[1] === "log" || tokens[1] === "branch" || tokens[1] === "show" || tokens[1] === "rev-parse"));
     if (!SAFE_READ_COMMANDS.has(cmdName) && !isGitRead && !SAFE_READ_COMMANDS.has(sub)) {
       allSafe = false;
       break;
