@@ -29,13 +29,13 @@
     "@vscode/ripgrep": "^1.15.9",
     "ink": "^6.8.0",
     "react": "^19.2.8",
+    "typescript": "^5.5.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",
     "@types/react": "^19.2.18",
-    "tsx": "^4.16.0",
-    "typescript": "^5.5.0"
+    "tsx": "^4.16.0"
   },
   "license": "Apache-2.0"
 }

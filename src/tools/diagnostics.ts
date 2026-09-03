@@ -1,5 +1,11 @@
 import * as path from "node:path";
-import ts from "typescript";
+
+let tsModule: any = null;
+try {
+  tsModule = await import("typescript").then((m) => m.default ?? m).catch(() => null);
+} catch {
+  // If typescript is unavailable, syntax checking gracefully falls back
+}
 
 export interface DiagnosticResult {
   hasErrors: boolean;
@@ -10,6 +16,10 @@ export interface DiagnosticResult {
  * Rapidly verifies syntax and reports parse/compiler errors on TypeScript and JavaScript files.
  */
 export function checkFileSyntax(filePath: string, content: string): DiagnosticResult {
+  if (!tsModule) {
+    return { hasErrors: false, messages: [] };
+  }
+
   const ext = path.extname(filePath).toLowerCase();
   const isTs = ext === ".ts" || ext === ".tsx";
   const isJs = ext === ".js" || ext === ".jsx" || ext === ".mjs" || ext === ".cjs";
@@ -20,18 +30,18 @@ export function checkFileSyntax(filePath: string, content: string): DiagnosticRe
 
   const scriptKind =
     ext === ".tsx"
-      ? ts.ScriptKind.TSX
+      ? tsModule.ScriptKind.TSX
       : ext === ".ts"
-        ? ts.ScriptKind.TS
+        ? tsModule.ScriptKind.TS
         : ext === ".jsx"
-          ? ts.ScriptKind.JSX
-          : ts.ScriptKind.JS;
+          ? tsModule.ScriptKind.JSX
+          : tsModule.ScriptKind.JS;
 
   try {
-    const sourceFile = ts.createSourceFile(
+    const sourceFile = tsModule.createSourceFile(
       filePath,
       content,
-      ts.ScriptTarget.Latest,
+      tsModule.ScriptTarget.Latest,
       true,
       scriptKind
     );
@@ -41,7 +51,7 @@ export function checkFileSyntax(filePath: string, content: string): DiagnosticRe
       return { hasErrors: false, messages: [] };
     }
 
-    const messages = diagnostics.slice(0, 3).map((d: ts.Diagnostic) => {
+    const messages = diagnostics.slice(0, 3).map((d: any) => {
       let lineNum = 1;
       if (d.file && typeof d.start === "number") {
         const lineAndChar = d.file.getLineAndCharacterOfPosition(d.start);
@@ -56,3 +66,4 @@ export function checkFileSyntax(filePath: string, content: string): DiagnosticRe
     return { hasErrors: false, messages: [] };
   }
 }
+
