@@ -18,10 +18,12 @@ export class StdioTransport implements MCPTransport {
       cmd = `${cmd}.cmd`;
     }
 
+    const needsShell = isWin && (cmd.endsWith(".cmd") || cmd.endsWith(".bat"));
+
     this.child = spawn(cmd, args, {
       env: { ...process.env, ...env },
       stdio: ["pipe", "pipe", "pipe"],
-      shell: isWin,
+      shell: needsShell,
     });
 
     this.child.on("error", () => {

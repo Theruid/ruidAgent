@@ -13,8 +13,8 @@ const PRICING_PER_MILLION: Record<string, [number, number]> = {
   "claude-opus-5": [15.0, 75.0],
 
   // OpenAI
-  "gpt-4o": [2.5, 10.0],
   "gpt-4o-mini": [0.15, 0.6],
+  "gpt-4o": [2.5, 10.0],
   "o1": [15.0, 60.0],
   "o3-mini": [1.1, 4.4],
 
