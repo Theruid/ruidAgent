@@ -72,6 +72,43 @@ describe("Workspace & Filesystem Tools (fs.ts)", () => {
     assert(updated.includes("Replaced Line 2"));
   });
 
+  it("handles CRLF files with LF input seamlessly in edit_file", async () => {
+    const crlfPath = "crlf_file.txt";
+    writeFileSync(join(tmpDir, crlfPath), "First line\r\nSecond line\r\nThird line\r\n", "utf8");
+
+    const edit = editFileTool(ws);
+    // Submit LF-only old_string & new_string against CRLF file
+    await edit.execute({
+      path: crlfPath,
+      old_string: "Second line",
+      new_string: "Modified second line",
+    });
+
+    const read = readFileTool(ws);
+    const updated = await read.execute({ path: crlfPath });
+    assert(updated.includes("Modified second line"));
+  });
+
+  it("executes atomic multi-edit batching in edit_file", async () => {
+    const batchPath = "batch_test.ts";
+    writeFileSync(join(tmpDir, batchPath), "const a = 1;\nconst b = 2;\n", "utf8");
+
+    const edit = editFileTool(ws);
+    const res = await edit.execute({
+      path: batchPath,
+      edits: [
+        { old_string: "const a = 1;", new_string: "const a = 100;" },
+        { old_string: "const b = 2;", new_string: "const b = 200;" },
+      ],
+    });
+
+    assert(res.includes("2 replacements"));
+    const read = readFileTool(ws);
+    const updated = await read.execute({ path: batchPath });
+    assert(updated.includes("const a = 100;"));
+    assert(updated.includes("const b = 200;"));
+  });
+
   it("lists directory contents and runs glob searches", async () => {
     const list = listDirTool(ws);
     const entries = await list.execute({});

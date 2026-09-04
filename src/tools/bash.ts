@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn, execSync, type ChildProcess } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Workspace } from "./fs.js";
@@ -7,8 +7,10 @@ import { ensureConfigDir } from "../config.js";
 import { logAudit } from "../audit/log.js";
 
 const DEFAULT_TIMEOUT_MS = 120_000;
-const MAX_OUTPUT_BYTES = 200 * 1024;
-const PROMPT_QUIET_WINDOW_MS = 400;
+const MAX_OUTPUT_BYTES = 30 * 1024; // 30 KB cap
+const HEAD_BYTES = 10 * 1024;
+const TAIL_BYTES = 20 * 1024;
+const PROMPT_QUIET_WINDOW_MS = 5000;
 const ROLLING_BUFFER_MAX = 300;
 
 export interface ShellConfig {
@@ -18,11 +20,50 @@ export interface ShellConfig {
 }
 
 let cachedShell: ShellConfig | null = null;
+let cachedUserPath: string | null = null;
+
+/**
+ * Captures user interactive PATH once at startup so agent finds shims (nvm, pyenv, cargo, etc.)
+ */
+export function getUserPath(): string {
+  if (cachedUserPath) return cachedUserPath;
+
+  if (process.platform !== "win32") {
+    try {
+      const shellEnv = process.env.SHELL || "/bin/sh";
+      const out = execSync(`${shellEnv} -lic 'echo "__RUID_PATH__:$PATH"'`, {
+        timeout: 3000,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+      });
+      const match = out.match(/__RUID_PATH__:(.*)/);
+      if (match && match[1]) {
+        cachedUserPath = match[1].trim();
+        return cachedUserPath;
+      }
+    } catch {}
+  }
+
+  cachedUserPath = process.env.PATH || "";
+  return cachedUserPath;
+}
 
 export function getShell(): ShellConfig {
   if (cachedShell) return cachedShell;
 
   if (process.platform !== "win32") {
+    // Prefer bash if available, fallback to /bin/sh
+    const bashCandidates = ["/bin/bash", "/usr/bin/bash", "/usr/local/bin/bash"];
+    for (const candidate of bashCandidates) {
+      if (existsSync(candidate)) {
+        cachedShell = {
+          executable: candidate,
+          args: (cmd) => ["-c", cmd],
+          type: "bash",
+        };
+        return cachedShell;
+      }
+    }
     cachedShell = {
       executable: "/bin/sh",
       args: (cmd) => ["-c", cmd],
@@ -61,15 +102,29 @@ export function getShell(): ShellConfig {
   return cachedShell;
 }
 
+export function getShellInfo(): string {
+  const shell = getShell();
+  return `Shell: ${shell.type} (${shell.executable}) | Note: working directory (cd) does not persist between commands (use the cwd parameter).`;
+}
+
 export const NON_INTERACTIVE_ENV = {
   CI: "1",
   DEBIAN_FRONTEND: "noninteractive",
   npm_config_yes: "true",
   GIT_TERMINAL_PROMPT: "0",
-  PIP_NO_INPUT: "1",
-  PYTHONUNBUFFERED: "1",
+  GIT_PAGER: "cat",
+  PAGER: "cat",
+  LESS: "-FRX",
+  TERM: "dumb",
   FORCE_COLOR: "0",
   NO_COLOR: "1",
+  PIP_NO_INPUT: "1",
+  PYTHONUNBUFFERED: "1",
+  PYTHONDONTWRITEBYTECODE: "1",
+  HOMEBREW_NO_AUTO_UPDATE: "1",
+  COREPACK_ENABLE_DOWNLOAD_PROMPT: "0",
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1",
+  NEXT_TELEMETRY_DISABLED: "1",
 };
 
 export const INTERACTIVE_PROMPT_PATTERNS = [
@@ -100,27 +155,52 @@ export function matchesInteractivePrompt(buffer: string): { matched: boolean; pr
   return { matched: false };
 }
 
-function killProcessTree(child: ChildProcess): void {
-  try {
+/**
+ * Strips ANSI escape codes from output strings
+ */
+export function stripAnsi(text: string): string {
+  return text.replace(/\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g, "");
+}
+
+export function killProcessTree(child: ChildProcess): Promise<void> {
+  return new Promise((resolve) => {
+    if (!child.pid) return resolve();
+
     if (process.platform === "win32") {
-      if (child.pid) {
-        spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], { stdio: "ignore" });
+      try {
+        const killer = spawn("taskkill", ["/PID", String(child.pid), "/T", "/F"], { stdio: "ignore" });
+        killer.on("close", () => resolve());
+        killer.on("error", () => resolve());
+      } catch {
+        resolve();
       }
-      child.kill("SIGKILL");
     } else {
-      if (child.pid) {
-        try {
-          process.kill(-child.pid, "SIGKILL");
-        } catch {
-          child.kill("SIGKILL");
-        }
-      } else {
+      const pid = child.pid;
+      if (!pid) {
         child.kill("SIGKILL");
+        return resolve();
+      }
+      try {
+        process.kill(-pid, "SIGTERM");
+        const timer = setTimeout(() => {
+          try {
+            process.kill(-pid, "SIGKILL");
+          } catch {}
+          resolve();
+        }, 2000);
+
+        child.on("close", () => {
+          clearTimeout(timer);
+          resolve();
+        });
+      } catch {
+        try {
+          child.kill("SIGKILL");
+        } catch {}
+        resolve();
       }
     }
-  } catch {
-    // Ignore error if process already exited
-  }
+  });
 }
 
 export interface ProcessInfo {
@@ -150,7 +230,8 @@ export class ProcessManager {
     const child = spawn(shell.executable, shell.args(command), {
       cwd,
       detached: true,
-      env: { ...process.env, ...NON_INTERACTIVE_ENV },
+      stdio: ["ignore", "pipe", "pipe"],
+      env: { ...process.env, PATH: getUserPath(), ...NON_INTERACTIVE_ENV },
     });
 
     const info: ProcessInfo = {
@@ -229,11 +310,12 @@ export function bashTool(
   return {
     name: "bash",
     description:
-      "Execute a shell command in the workspace root. Supports foreground live execution and run_in_background for long tasks.",
+      "Execute a shell command in the workspace root. Supports foreground live execution and run_in_background for long tasks. Set cwd to run in a subdirectory.",
     parameters: {
       type: "object",
       properties: {
         command: { type: "string", description: "The shell command to run" },
+        cwd: { type: "string", description: "Optional working directory relative to workspace root" },
         timeout_ms: { type: "number", description: "Timeout in ms (default 120000, max 600000)" },
         run_in_background: { type: "boolean", description: "Run process detached in background (default false)" },
       },
@@ -241,13 +323,16 @@ export function bashTool(
     },
     schema: z.object({
       command: z.string().min(1),
+      cwd: z.string().optional(),
       timeout_ms: z.number().int().min(1000).max(600_000).optional(),
       run_in_background: z.boolean().optional().default(false),
     }),
-    async execute(args: { command: string; timeout_ms?: number; run_in_background?: boolean }): Promise<string> {
+    async execute(args: { command: string; cwd?: string; timeout_ms?: number; run_in_background?: boolean }): Promise<string> {
+      const targetCwd = args.cwd ? ws.resolve(args.cwd) : ws.root;
+
       if (args.run_in_background) {
         const pm = processManager ?? new ProcessManager();
-        const info = pm.spawnBackground(args.command, ws.root);
+        const info = pm.spawnBackground(args.command, targetCwd);
         return `Background process started.\nTask ID: ${info.id}\nCommand: ${info.command}\nLogs: ${info.logFilePath}\nUse process_logs or process_status with "${info.id}" to inspect progress.`;
       }
 
@@ -261,10 +346,12 @@ export function bashTool(
         let quietTimer: NodeJS.Timeout | null = null;
         let rollingBuffer = "";
 
+        // Spawn with closed stdin ('ignore') to ensure interactive prompts receive immediate EOF
         const child = spawn(shell.executable, shell.args(args.command), {
-          cwd: ws.root,
+          cwd: targetCwd,
           detached: !isWindows,
-          env: { ...process.env, ...NON_INTERACTIVE_ENV },
+          stdio: ["ignore", "pipe", "pipe"],
+          env: { ...process.env, PATH: getUserPath(), ...NON_INTERACTIVE_ENV },
         });
 
         let stdout = "";
@@ -289,27 +376,42 @@ export function bashTool(
           resolve(result);
         };
 
-        const cap = (chunk: string, target: string): string => {
-          if (stdout.length + stderr.length >= MAX_OUTPUT_BYTES) {
-            truncated = true;
-            return target;
+        const capOutput = (out: string, err: string): { stdout: string; stderr: string; wasTruncated: boolean } => {
+          const cleanOut = stripAnsi(out);
+          const cleanErr = stripAnsi(err);
+          const total = cleanOut.length + cleanErr.length;
+          if (total <= MAX_OUTPUT_BYTES) {
+            return { stdout: cleanOut, stderr: cleanErr, wasTruncated: false };
           }
-          return target + chunk;
+
+          let finalOut = cleanOut;
+          let finalErr = cleanErr;
+
+          if (finalOut.length > HEAD_BYTES + TAIL_BYTES) {
+            const head = finalOut.slice(0, HEAD_BYTES);
+            const tail = finalOut.slice(-TAIL_BYTES);
+            const omitted = finalOut.length - (HEAD_BYTES + TAIL_BYTES);
+            finalOut = `${head}\n\n[... ${omitted} characters omitted for context limit ...]\n\n${tail}`;
+          }
+
+          if (finalErr.length > TAIL_BYTES) {
+            finalErr = finalErr.slice(-TAIL_BYTES);
+          }
+
+          return { stdout: finalOut, stderr: finalErr, wasTruncated: true };
         };
 
         const handleChunk = (chunkText: string, streamType: "stdout" | "stderr") => {
           if (isResolved) return;
 
-          // Maintain sliding rolling buffer across chunk boundaries
           rollingBuffer = (rollingBuffer + chunkText).slice(-ROLLING_BUFFER_MAX);
 
-          // If output continues, reset quiet confirmation timer
           if (quietTimer) {
             clearTimeout(quietTimer);
             quietTimer = null;
           }
 
-          // Check if buffer contains an interactive prompt signature
+          // Secondary quiet detection only if prompt signatures appear
           const { matched, promptSnippet } = matchesInteractivePrompt(rollingBuffer);
           if (matched) {
             quietTimer = setTimeout(() => {
@@ -327,8 +429,8 @@ export function bashTool(
 
               finish(
                 `Execution blocked: Command paused waiting for interactive user input ("${promptSnippet}").\n` +
-                  `Process was terminated after ${PROMPT_QUIET_WINDOW_MS}ms to prevent terminal freeze.\n` +
-                  `Fix: Re-run the command with automated flags (e.g. -y, --yes, --non-interactive, or pass required inputs directly).`
+                  `Process was terminated after ${PROMPT_QUIET_WINDOW_MS}ms of inactivity to prevent hanging.\n` +
+                  `Fix: Re-run the command with automated flags (e.g. -y, --yes, --non-interactive, or pass required inputs via stdin/arguments).`
               );
             }, PROMPT_QUIET_WINDOW_MS);
           }
@@ -338,13 +440,13 @@ export function bashTool(
 
         child.stdout?.on("data", (d: Buffer) => {
           const text = d.toString();
-          stdout = cap(text, stdout);
+          stdout += text;
           handleChunk(text, "stdout");
         });
 
         child.stderr?.on("data", (d: Buffer) => {
           const text = d.toString();
-          stderr = cap(text, stderr);
+          stderr += text;
           handleChunk(text, "stderr");
         });
 
@@ -359,7 +461,13 @@ export function bashTool(
             decision: "denied",
             error: `Hard timeout exceeded after ${timeout}ms`,
           });
-          finish(`Command timed out after ${timeout}ms.\nSTDOUT:\n${stdout}\nSTDERR:\n${stderr}`);
+          const capped = capOutput(stdout, stderr);
+          finish(
+            `Command timed out after ${timeout}ms.\n` +
+              `Hint: For long builds, tests, or server watchers, run with run_in_background: true and monitor using process_status or process_logs.\n` +
+              `STDOUT:\n${capped.stdout}\n` +
+              `STDERR:\n${capped.stderr}`
+          );
         }, timeout);
 
         child.on("error", (err) => {
@@ -367,11 +475,12 @@ export function bashTool(
         });
 
         child.on("close", (code) => {
-          const suffix = truncated ? "\n(output truncated)" : "";
+          const capped = capOutput(stdout, stderr);
+          const suffix = capped.wasTruncated ? "\n(output capped at 30KB)" : "";
           finish(
             `Exit code: ${code ?? "null"}\n` +
-              (stdout ? `STDOUT:\n${stdout}\n` : "") +
-              (stderr ? `STDERR:\n${stderr}\n` : "") +
+              (capped.stdout ? `STDOUT:\n${capped.stdout}\n` : "") +
+              (capped.stderr ? `STDERR:\n${capped.stderr}\n` : "") +
               suffix
           );
         });

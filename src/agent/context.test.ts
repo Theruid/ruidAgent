@@ -51,7 +51,7 @@ describe("Context Compaction & Token Estimation", () => {
     const oldRes = compacted[1].content[0];
     assert.strictEqual(oldRes.type, "tool_result");
     if (oldRes.type === "tool_result") {
-      assert.match(oldRes.content, /truncated for context compaction/);
+      assert.match(oldRes.content, /compacted to preserve context budget|truncated for context compaction/);
     }
 
     // Recent tool result remains intact

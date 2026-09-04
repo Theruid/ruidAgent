@@ -1,8 +1,11 @@
-import { readdirSync, readFileSync, writeFileSync, mkdirSync, existsSync, unlinkSync, renameSync } from "node:fs";
+import { readdirSync, readFileSync, writeFileSync, mkdirSync, existsSync, unlinkSync, renameSync, appendFileSync } from "node:fs";
 import { join } from "node:path";
+import { homedir } from "node:os";
+import { createHash } from "node:crypto";
 import type { LLMMessage } from "./providers/types.js";
 import type { AgentTask } from "./tools/tasks.js";
 import { ensureConfigDir } from "./config.js";
+import { redactSecrets } from "./permissions.js";
 
 export const CURRENT_SESSION_SCHEMA_VERSION = 2;
 
@@ -19,8 +22,17 @@ export interface StoredSession {
   metadata?: Record<string, unknown>;
 }
 
+export function getProjectStorageDir(workspaceRoot: string = process.cwd()): string {
+  const hash = createHash("sha256").update(workspaceRoot).digest("hex").slice(0, 16);
+  const dir = join(homedir(), ".ruid", "projects", hash);
+  mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
 function sessionsDir(): string {
-  return join(ensureConfigDir(), "sessions");
+  const dir = join(getProjectStorageDir(), "sessions");
+  mkdirSync(dir, { recursive: true });
+  return dir;
 }
 
 export function migrateSession(raw: any): StoredSession {
@@ -79,13 +91,23 @@ export function saveSession(sess: Omit<StoredSession, "schemaVersion"> & { schem
   };
   const targetFile = join(sessionsDir(), `${fullSession.id}.json`);
   const tempFile = join(sessionsDir(), `${fullSession.id}.json.tmp`);
-  writeFileSync(tempFile, JSON.stringify(fullSession, null, 2), "utf8");
+  const serialized = redactSecrets(JSON.stringify(fullSession, null, 2));
+  writeFileSync(tempFile, serialized, "utf8");
   renameSync(tempFile, targetFile);
+
+  // Also append to JSONL session event log
+  const jsonlFile = join(sessionsDir(), `${fullSession.id}.jsonl`);
+  const eventLine = JSON.stringify({ ts: Date.now(), event: "session_snapshot", session: fullSession }) + "\n";
+  try {
+    appendFileSync(jsonlFile, redactSecrets(eventLine), "utf8");
+  } catch {}
 }
 
 export function deleteSession(id: string): void {
   const file = join(sessionsDir(), `${id}.json`);
   if (existsSync(file)) unlinkSync(file);
+  const jsonl = join(sessionsDir(), `${id}.jsonl`);
+  if (existsSync(jsonl)) unlinkSync(jsonl);
 }
 
 export function listSessions(): StoredSession[] {

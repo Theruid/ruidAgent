@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import type { HookConfig, HookRule } from "./config.js";
+import { isWorkspaceTrusted } from "./permissions.js";
 
 export interface HookEvent {
   event: "preToolUse" | "postToolUse";
@@ -50,6 +51,16 @@ export async function executeHookRule(
   rule: HookRule,
   event: HookEvent
 ): Promise<{ success: boolean; exitCode: number | null; stderr: string; stdout: string }> {
+  // Gate execution on workspace trust for security
+  if (!isWorkspaceTrusted(event.workspaceRoot) && !process.env.RUID_TRUST_ALL_WORKSPACES) {
+    return {
+      success: false,
+      exitCode: 1,
+      stderr: "Untrusted workspace: execution of repository-local hooks is disabled. Authorize workspace trust to enable hooks.",
+      stdout: "",
+    };
+  }
+
   return new Promise((resolve) => {
     const timeoutMs = rule.timeoutMs ?? 10000;
     let timer: NodeJS.Timeout | null = null;

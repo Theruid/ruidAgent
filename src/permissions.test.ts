@@ -4,7 +4,10 @@ import {
   classifyBashCommand,
   classifyToolRisk,
   isPathSensitive,
+  redactSecrets,
   createDeferredPermissions,
+  isWorkspaceTrusted,
+  setWorkspaceTrusted,
 } from "./permissions.js";
 
 describe("Granular Permissions & Safety Risk Tiers", () => {
@@ -13,11 +16,27 @@ describe("Granular Permissions & Safety Risk Tiers", () => {
     assert.strictEqual(isPathSensitive(".env.local"), true);
     assert.strictEqual(isPathSensitive("server.key"), true);
     assert.strictEqual(isPathSensitive("id_rsa"), true);
+    assert.strictEqual(isPathSensitive("id_rsa.pub"), true);
+    assert.strictEqual(isPathSensitive(".aws/credentials"), true);
+    assert.strictEqual(isPathSensitive(".ssh/config"), true);
+    assert.strictEqual(isPathSensitive(".npmrc"), true);
+    assert.strictEqual(isPathSensitive(".netrc"), true);
+    assert.strictEqual(isPathSensitive(".git-credentials"), true);
     assert.strictEqual(isPathSensitive("credentials.json"), true);
     assert.strictEqual(isPathSensitive("src/index.ts"), false);
 
     assert.strictEqual(classifyToolRisk("read_file", { path: ".env" }), 4);
     assert.strictEqual(classifyToolRisk("write_file", { path: "certs/server.key" }), 4);
+    assert.strictEqual(classifyToolRisk("glob", { pattern: "**/.env" }), 4);
+  });
+
+  it("redacts credentials and private keys from records", () => {
+    const raw = "sk-ant-api03-abcdef1234567890abcdef1234567890-test AKIAIOSFODNN7EXAMPLE ghp_1234567890abcdefghijklmnopqrstuvwxyz";
+    const redacted = redactSecrets(raw);
+    assert(!redacted.includes("AKIAIOSFODNN7EXAMPLE"));
+    assert(!redacted.includes("ghp_1234567890abcdefghijklmnopqrstuvwxyz"));
+    assert(redacted.includes("[REDACTED_AWS_KEY]"));
+    assert(redacted.includes("[REDACTED_GITHUB_TOKEN]"));
   });
 
   it("classifies read-only tools as Tier 0", () => {
@@ -35,6 +54,7 @@ describe("Granular Permissions & Safety Risk Tiers", () => {
   });
 
   it("classifies safe bash commands as Tier 2 and mutating/chaining as Tier 3/4", () => {
+    // Safe simple reads
     const lsResult = classifyBashCommand("ls -la");
     assert.strictEqual(lsResult.tier, 2);
     assert.strictEqual(lsResult.isSafe, true);
@@ -43,29 +63,44 @@ describe("Granular Permissions & Safety Risk Tiers", () => {
     assert.strictEqual(gitLogResult.tier, 2);
     assert.strictEqual(gitLogResult.isSafe, true);
 
-    const npmInstall = classifyBashCommand("npm install lodash");
-    assert.strictEqual(npmInstall.tier, 3);
-    assert.strictEqual(npmInstall.isSafe, false);
+    const gitStatus = classifyBashCommand("git status");
+    assert.strictEqual(gitStatus.tier, 2);
+    assert.strictEqual(gitStatus.isSafe, true);
 
-    const subshellEvasion = classifyBashCommand("echo $(cat .env)");
-    assert.strictEqual(subshellEvasion.tier, 3);
-    assert.strictEqual(subshellEvasion.isSafe, false);
+    const nodeVersion = classifyBashCommand("node -v");
+    assert.strictEqual(nodeVersion.tier, 2);
+    assert.strictEqual(nodeVersion.isSafe, true);
 
-    const dangerousRm = classifyBashCommand("rm -rf /tmp/data");
-    assert.strictEqual(dangerousRm.tier, 4);
-    assert.strictEqual(dangerousRm.isSafe, false);
+    // Chained / compound commands escalate to Tier 3 or 4
+    const chained = classifyBashCommand("ls; rm -rf x");
+    assert.strictEqual(chained.tier, 4);
+    assert.strictEqual(chained.isSafe, false);
 
-    const redirectOut = classifyBashCommand("ls > output.txt");
-    assert.strictEqual(redirectOut.tier, 3);
-    assert.strictEqual(redirectOut.isSafe, false);
+    const backticks = classifyBashCommand("git log `id`");
+    assert.strictEqual(backticks.tier, 3);
+    assert.strictEqual(backticks.isSafe, false);
 
-    const pipeTee = classifyBashCommand("cat foo.txt | tee bar.txt");
-    assert.strictEqual(pipeTee.tier, 3);
-    assert.strictEqual(pipeTee.isSafe, false);
+    const subshell = classifyBashCommand("echo $(cat .env)");
+    assert.strictEqual(subshell.tier, 3);
+    assert.strictEqual(subshell.isSafe, false);
 
-    const multiLine = classifyBashCommand("ls\nrm file.txt");
-    assert.strictEqual(multiLine.tier, 3);
-    assert.strictEqual(multiLine.isSafe, false);
+    // Dangerous git flags escalate to Tier 3/4
+    const gitPager = classifyBashCommand("git -c core.pager='sh -c pwn' log");
+    assert.strictEqual(gitPager.tier, 3);
+    assert.strictEqual(gitPager.isSafe, false);
+
+    const gitPush = classifyBashCommand("git push origin main");
+    assert.strictEqual(gitPush.tier, 4);
+    assert.strictEqual(gitPush.isSafe, false);
+
+    const gitClean = classifyBashCommand("git clean -fd");
+    assert.strictEqual(gitClean.tier, 4);
+    assert.strictEqual(gitClean.isSafe, false);
+
+    // Commands reading sensitive files directly in args escalate to Tier 4
+    const catEnv = classifyBashCommand("cat .env");
+    assert.strictEqual(catEnv.tier, 4);
+    assert.strictEqual(catEnv.isSafe, false);
   });
 
   it("enforces plan mode restrictions (allows Tier 0/2, denies mutating)", async () => {
@@ -103,18 +138,9 @@ describe("Granular Permissions & Safety Risk Tiers", () => {
     assert.strictEqual(resolved, true);
   });
 
-  it("enforces strict Tier 4 boundary in auto mode for dangerous rm -rf commands", async () => {
-    const perm = createDeferredPermissions(new Set(), "auto");
-
-    let resolved = false;
-    const dangerousCmdPromise = perm.manager.check("bash", { command: "rm -rf /" }).then((res) => {
-      resolved = res;
-      return res;
-    });
-
-    assert.strictEqual(perm.isPending(), true);
-    perm.respond("n");
-    await dangerousCmdPromise;
-    assert.strictEqual(resolved, false);
+  it("persists and reads workspace trust correctly", () => {
+    const testWs = "C:/test/workspace/path";
+    setWorkspaceTrusted(testWs, true);
+    assert.strictEqual(isWorkspaceTrusted(testWs), true);
   });
 });

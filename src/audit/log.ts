@@ -1,6 +1,7 @@
 import { appendFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { ensureConfigDir } from "../config.js";
+import { redactSecrets } from "../permissions.js";
 
 export type AuditSource = "direct" | "subagent" | "background" | "mcp";
 export type AuditDecision = "allowed" | "denied" | "auto_approved";
@@ -27,8 +28,9 @@ function auditLogPath(): string {
 export function logAudit(record: AuditRecord): void {
   try {
     const file = auditLogPath();
-    const line = JSON.stringify(record) + "\n";
-    appendFileSync(file, line, "utf8");
+    const rawLine = JSON.stringify(record);
+    const sanitizedLine = redactSecrets(rawLine) + "\n";
+    appendFileSync(file, sanitizedLine, "utf8");
   } catch (e) {
     if (process.env.DEBUG) {
       console.error("[audit log debug] Failed to write audit log entry:", e);

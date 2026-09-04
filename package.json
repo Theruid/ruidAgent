@@ -1,6 +1,6 @@
 {
   "name": "@theruid/ruid",
-  "version": "0.3.44",
+  "version": "0.3.45",
   "description": "Standalone CLI coding agent — works with any LLM provider",
   "type": "module",
   "main": "dist/index.js",
@@ -23,7 +23,8 @@
     "dev": "tsx src/index.ts",
     "start": "node dist/index.js",
     "test": "tsx --test src/**/*.test.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "audit:smoke": "tsx scripts/audit-smoke.ts"
   },
   "dependencies": {
     "@vscode/ripgrep": "^1.15.9",

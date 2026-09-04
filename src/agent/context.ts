@@ -25,11 +25,28 @@ export function estimateHistoryTokens(messages: LLMMessage[]): number {
   return messages.reduce((acc, m) => acc + estimateMessageTokens(m), 0);
 }
 
-const MAX_COMPACTED_TOOL_RESULT_LEN = 300;
+const MAX_COMPACTED_TOOL_RESULT_LEN = 2500;
+
+let tokenCalibrationRatio = 1.0;
+
+/**
+ * Calibrates token estimation ratio using reported provider input tokens via EMA smoothing.
+ */
+export function updateTokenCalibration(estimatedTokens: number, actualInputTokens: number): void {
+  if (estimatedTokens > 0 && actualInputTokens > 0) {
+    const ratio = actualInputTokens / estimatedTokens;
+    // EMA smoothing factor alpha = 0.2
+    tokenCalibrationRatio = 0.8 * tokenCalibrationRatio + 0.2 * ratio;
+  }
+}
+
+export function getCalibratedTokenEstimate(rawEstimate: number): number {
+  return Math.ceil(rawEstimate * tokenCalibrationRatio);
+}
 
 /**
  * Phase 1: Micro-compacts older tool results in message history to preserve context space
- * while keeping recent turns intact.
+ * while keeping recent turns and critical outputs intact.
  */
 export function microCompactHistory(
   messages: LLMMessage[],
@@ -56,11 +73,11 @@ export function microCompactHistory(
 
     const newContent = msg.content.map((c) => {
       if (c.type === "tool_result" && c.content.length > MAX_COMPACTED_TOOL_RESULT_LEN) {
-        const lines = c.content.split("\n");
+        const lines = c.content.split(/\r?\n/);
         const summary =
-          lines.length > 6
-            ? `${lines.slice(0, 3).join("\n")}\n... [${lines.length - 6} lines truncated for context compaction] ...\n${lines.slice(-3).join("\n")}`
-            : c.content.slice(0, MAX_COMPACTED_TOOL_RESULT_LEN) + " ... [truncated]";
+          lines.length > 20
+            ? `${lines.slice(0, 10).join("\n")}\n... [${lines.length - 20} lines compacted to preserve context budget] ...\n${lines.slice(-10).join("\n")}`
+            : c.content.slice(0, MAX_COMPACTED_TOOL_RESULT_LEN) + "\n... [truncated for context compaction; re-read if needed]";
 
         return {
           ...c,

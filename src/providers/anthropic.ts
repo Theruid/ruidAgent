@@ -66,9 +66,12 @@ export function createAnthropicProvider(config: ProviderConfig): LLMProvider {
         }));
       }
 
+      // Deterministically sort tools so prompt cache prefix remains stable
+      const sortedTools = [...req.tools].sort((a, b) => a.name.localeCompare(b.name));
+
       // Add cache_control to the last tool definition to cache the static tool prefix
-      const toolsPayload: any[] = req.tools.map((t, idx) => {
-        const isLastTool = idx === req.tools.length - 1;
+      const toolsPayload: any[] = sortedTools.map((t, idx) => {
+        const isLastTool = idx === sortedTools.length - 1;
         const cacheControl = t.cacheControl ?? (isLastTool ? { type: "ephemeral" as const } : undefined);
         return {
           name: t.name,

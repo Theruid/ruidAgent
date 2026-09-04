@@ -68,6 +68,12 @@ export function StatusBar({
       : " · [think]"
     : "";
 
+  const contextLimit = capabilities?.contextWindow ?? 128_000;
+  const currentTokens = usage?.inputTokens ?? 0;
+  const contextPct = Math.min(100, Math.round((currentTokens / contextLimit) * 100));
+  const contextColor = contextPct > 85 ? "red" : contextPct > 70 ? "yellow" : "cyan";
+  const contextStr = currentTokens > 0 ? ` · ctx ${contextPct}%` : "";
+
   return (
     <Box justifyContent="space-between" paddingX={1} marginTop={0}>
       <Box>
@@ -77,6 +83,11 @@ export function StatusBar({
         <Text dimColor>
           {" "}{version ? `v${version} · ` : ""}{connected ? `${providerName} · ${model || "(no model)"}${thinkingBadge}` : "not connected — /setup"}
         </Text>
+        {currentTokens > 0 && (
+          <Text color={contextColor}>
+            {contextStr}
+          </Text>
+        )}
       </Box>
 
       {hasUsage && (

@@ -8,19 +8,13 @@ import { ensureConfigDir } from "../config.js";
 
 const execFileAsync = promisify(execFile);
 
-export interface GitFileStatus {
-  path: string;
-  statusCode: string;
-}
-
 export interface GitTurnCheckpoint {
   turn: number;
   timestamp: number;
   isGit: boolean;
+  ref: string;
   untrackedFiles: string[];
   modifiedFiles: string[];
-  /** Pre-turn content of files that were already dirty before the turn started */
-  preExistingDirtyBackup: Map<string, string | null>;
   sideEffects: string[];
 }
 
@@ -28,9 +22,9 @@ interface SerializedGitTurnCheckpoint {
   turn: number;
   timestamp: number;
   isGit: boolean;
+  ref: string;
   untrackedFiles: string[];
   modifiedFiles: string[];
-  preExistingDirtyBackup: Array<[string, string | null]>;
   sideEffects: string[];
 }
 
@@ -38,7 +32,7 @@ async function runGit(args: string[], cwd: string): Promise<{ stdout: string; st
   try {
     const res = await execFileAsync("git", args, {
       cwd,
-      maxBuffer: 10 * 1024 * 1024,
+      maxBuffer: 20 * 1024 * 1024,
       env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
     });
     return { stdout: res.stdout, stderr: res.stderr, success: true };
@@ -78,9 +72,9 @@ export class GitCheckpointManager {
             turn: item.turn,
             timestamp: item.timestamp,
             isGit: item.isGit,
+            ref: item.ref,
             untrackedFiles: item.untrackedFiles ?? [],
             modifiedFiles: item.modifiedFiles ?? [],
-            preExistingDirtyBackup: new Map(item.preExistingDirtyBackup ?? []),
             sideEffects: item.sideEffects ?? [],
           }));
           if (this.history.length > 0) {
@@ -88,9 +82,7 @@ export class GitCheckpointManager {
             this.turnCounter = maxTurn + 1;
           }
         }
-      } catch {
-        // Safe fallback on corrupt checkpoint file
-      }
+      } catch {}
     }
   }
 
@@ -101,9 +93,9 @@ export class GitCheckpointManager {
         turn: t.turn,
         timestamp: t.timestamp,
         isGit: t.isGit,
+        ref: t.ref,
         untrackedFiles: t.untrackedFiles,
         modifiedFiles: t.modifiedFiles,
-        preExistingDirtyBackup: [...t.preExistingDirtyBackup.entries()],
         sideEffects: t.sideEffects,
       }));
 
@@ -111,9 +103,7 @@ export class GitCheckpointManager {
       const tempFile = path.join(snapshotsDir(), `${this.sessionId}.git-checkpoints.json.tmp`);
       fs.writeFileSync(tempFile, JSON.stringify(serialized, null, 2), "utf8");
       fs.renameSync(tempFile, targetFile);
-    } catch {
-      // Non-fatal if persistence fails
-    }
+    } catch {}
   }
 
   recordSideEffect(description: string): void {
@@ -128,7 +118,8 @@ export class GitCheckpointManager {
 
     const untrackedFiles: string[] = [];
     const modifiedFiles: string[] = [];
-    const preExistingDirtyBackup = new Map<string, string | null>();
+    const turnNumber = this.turnCounter++;
+    const ref = `refs/ruid/checkpoints/${this.sessionId || "default"}/${turnNumber}`;
 
     if (isGit) {
       const statusRes = await runGit(["status", "--porcelain=v1", "-uall"], workspaceRoot);
@@ -141,33 +132,43 @@ export class GitCheckpointManager {
             untrackedFiles.push(rawPath);
           } else {
             modifiedFiles.push(rawPath);
-            const abs = path.join(workspaceRoot, rawPath);
-            if (fs.existsSync(abs)) {
-              try {
-                preExistingDirtyBackup.set(rawPath, fs.readFileSync(abs, "utf8"));
-              } catch {
-                preExistingDirtyBackup.set(rawPath, null);
-              }
-            } else {
-              preExistingDirtyBackup.set(rawPath, null);
-            }
           }
         }
       }
+
+      // Create durable snapshot ref in git object store
+      try {
+        const indexTmp = path.join(workspaceRoot, ".git", `ruid-index-${turnNumber}.tmp`);
+        await runGit(["add", "-A", "--force", "."], workspaceRoot);
+        const writeTree = await runGit(["write-tree"], workspaceRoot);
+        if (writeTree.success && writeTree.stdout.trim()) {
+          const treeSha = writeTree.stdout.trim();
+          const headCommit = (await runGit(["rev-parse", "HEAD"], workspaceRoot)).stdout.trim();
+          const commitArgs = headCommit
+            ? ["commit-tree", treeSha, "-p", headCommit, "-m", `ruid checkpoint turn ${turnNumber}`]
+            : ["commit-tree", treeSha, "-m", `ruid checkpoint turn ${turnNumber}`];
+          const commitRes = await runGit(commitArgs, workspaceRoot);
+          if (commitRes.success && commitRes.stdout.trim()) {
+            const commitSha = commitRes.stdout.trim();
+            await runGit(["update-ref", ref, commitSha], workspaceRoot);
+          }
+        }
+        if (fs.existsSync(indexTmp)) fs.unlinkSync(indexTmp);
+      } catch {}
     }
 
     this.currentTurn = {
-      turn: this.turnCounter++,
+      turn: turnNumber,
       timestamp: Date.now(),
       isGit,
+      ref,
       untrackedFiles,
       modifiedFiles,
-      preExistingDirtyBackup,
       sideEffects: [],
     };
     this.history.push(this.currentTurn);
-    if (this.history.length > 25) {
-      this.history = this.history.slice(-25);
+    if (this.history.length > 30) {
+      this.history = this.history.slice(-30);
     }
     this.persist();
   }
@@ -204,7 +205,7 @@ export class GitCheckpointManager {
           const rawPath = line.slice(3).trim().replace(/^"|"$/g, "").replace(/\\/g, "/");
           const abs = path.join(workspaceRoot, rawPath);
 
-          // 1. Untracked file created during this turn (not in preUntrackedSet)
+          // 1. Untracked file created during this turn
           if (status === "??" || status === " A" || status === "AM") {
             if (!preUntrackedSet.has(rawPath)) {
               try {
@@ -215,35 +216,18 @@ export class GitCheckpointManager {
               } catch {}
             }
           }
-          // 2. Tracked file modified/deleted during this turn
+          // 2. Tracked file modified during turn
           else {
             if (!preModifiedSet.has(rawPath)) {
-              // File was completely clean before the turn -> checkout HEAD
               const checkoutRes = await runGit(["checkout", "HEAD", "--", rawPath], workspaceRoot);
               if (checkoutRes.success) {
                 restored.push(rawPath);
               }
-            } else {
-              // File had pre-existing uncommitted edits before turn -> only restore if it actually changed during turn
-              const backup = checkpoint.preExistingDirtyBackup.get(rawPath);
-              if (backup !== undefined && backup !== null) {
-                let currentContent = "";
-                try {
-                  currentContent = fs.readFileSync(abs, "utf8");
-                } catch {}
-
-                if (currentContent !== backup) {
-                  try {
-                    fs.mkdirSync(path.dirname(abs), { recursive: true });
-                    fs.writeFileSync(abs, backup, "utf8");
-                    restored.push(rawPath);
-                  } catch {}
-                }
-              } else if (backup === null) {
-                if (fs.existsSync(abs)) {
-                  fs.rmSync(abs, { recursive: true, force: true });
-                  deleted.push(rawPath);
-                }
+            } else if (checkpoint.ref) {
+              // Checkout from checkpoint ref tree
+              const restoreRef = await runGit(["checkout", checkpoint.ref, "--", rawPath], workspaceRoot);
+              if (restoreRef.success) {
+                restored.push(rawPath);
               }
             }
           }

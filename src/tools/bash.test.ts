@@ -16,7 +16,7 @@ describe("Background Process Manager & Shell Execution", () => {
   const scriptB = "tmp_test_prompt_cont.js";
 
   before(() => {
-    writeFileSync(scriptA, "process.stdout.write('Do you want to continue? [y/N] '); process.stdin.resume();", "utf8");
+    writeFileSync(scriptA, "process.stdout.write('Do you want to continue? [y/N] '); setInterval(() => {}, 1000);", "utf8");
     writeFileSync(scriptB, "process.stdout.write('Password: '); setTimeout(() => { console.log('not blocked, completed'); }, 100);", "utf8");
   });
 
@@ -82,8 +82,8 @@ describe("Background Process Manager & Shell Execution", () => {
     const result = await tool.execute({ command: `node ${scriptA}`, timeout_ms: 10_000 });
     const duration = Date.now() - startTime;
 
-    // Must terminate within ~2000ms via quiet-window kill, NOT the 10000ms hard timeout
-    assert.strictEqual(duration < 4000, true);
+    // Must terminate within ~6500ms via quiet-window kill, NOT the 10000ms hard timeout
+    assert.strictEqual(duration < 8000, true);
     assert.match(result, /Execution blocked: Command paused waiting for interactive user input/);
     assert.match(result, /\[y\/N\]/);
   });

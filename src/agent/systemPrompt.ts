@@ -4,7 +4,9 @@ import type { AgentMode } from "../permissions.js";
 import type { SystemPromptBlock } from "../providers/types.js";
 
 const INSTRUCTION_FILES = [
+  "AGENTS.md",
   "RUID.md",
+  "CLAUDE.md",
   "AGENT.md",
   ".agentrules",
 ];

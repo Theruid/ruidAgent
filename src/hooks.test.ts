@@ -1,8 +1,13 @@
-import { describe, it } from "node:test";
+import { describe, it, before } from "node:test";
 import assert from "node:assert";
 import { matchesToolFilter, runHooks, type HookEvent } from "./hooks.js";
+import { setWorkspaceTrusted } from "./permissions.js";
 
 describe("Tool Execution Hooks System", () => {
+  before(() => {
+    setWorkspaceTrusted(process.cwd(), true);
+  });
+
   it("matches tool filter rules correctly", () => {
     assert.strictEqual(matchesToolFilter("bash", "bash"), true);
     assert.strictEqual(matchesToolFilter("edit_file", "bash"), false);

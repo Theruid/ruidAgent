@@ -290,142 +290,139 @@ export async function runAgentLoop(options: LoopOptions): Promise<LLMMessage[]> 
       approvals.push(await permissions.check(call.name, call.input));
     }
 
-    // Phase 2: dispatch all approved work simultaneously
-    const results = await Promise.all(
-      toolCalls.map(async (call, i) => {
-        if (!approvals[i]) {
-          const hookDenial = hookDenials.find((d) => d.index === i);
-          if (hookDenial) {
-            return {
-              type: "tool_result" as const,
-              toolCallId: call.id,
-              content: `Error: ${hookDenial.reason}`,
-              isError: true,
-            };
-          }
+    // Phase 2: Partition into read-only (parallel) and mutating (serial in strict order)
+    const READ_ONLY_TOOL_NAMES = new Set([
+      "read_file",
+      "list_dir",
+      "glob",
+      "grep",
+      "git_status",
+      "git_diff",
+      "git_log",
+      "task_list",
+      "process_status",
+      "process_logs",
+      "memory_recall",
+      "memory_list",
+    ]);
 
-          options.onEvent?.({ type: "permission_denied", name: call.name });
+    const results: Array<{ type: "tool_result"; toolCallId: string; content: string; isError: boolean }> = new Array(
+      toolCalls.length
+    );
+
+    // Track call hash for loop/duplicate detection
+    const callHashList: string[] = [];
+
+    const readIndices: number[] = [];
+    const mutateIndices: number[] = [];
+
+    toolCalls.forEach((call, i) => {
+      const tool = registry.get(call.name);
+      const isReadOnly =
+        READ_ONLY_TOOL_NAMES.has(call.name) ||
+        (call.name.startsWith("mcp__") && (tool as any)?.annotations?.readOnlyHint === true);
+
+      if (isReadOnly) {
+        readIndices.push(i);
+      } else {
+        mutateIndices.push(i);
+      }
+    });
+
+    const executeToolIndex = async (i: number): Promise<{ type: "tool_result"; toolCallId: string; content: string; isError: boolean }> => {
+      const call = toolCalls[i];
+
+      if (options.signal?.aborted) {
+        return {
+          type: "tool_result",
+          toolCallId: call.id,
+          content: "Operation cancelled by user.",
+          isError: true,
+        };
+      }
+
+      if (!approvals[i]) {
+        const hookDenial = hookDenials.find((d) => d.index === i);
+        if (hookDenial) {
           return {
-            type: "tool_result" as const,
+            type: "tool_result",
             toolCallId: call.id,
-            content:
-              "Permission denied by user. Do not retry this action; inform the user that the operation was cancelled.",
+            content: `Error: ${hookDenial.reason}`,
             isError: true,
           };
         }
 
-        const rawInputJson = JSON.stringify(call.input ?? {});
-        const rawPath = (call.input as any)?.path as string | undefined;
-        const targetPath = rawPath ? normalizeResourcePath(rawPath, ws.root) : undefined;
-        const trackKey = targetPath ?? call.name;
-        const track = staleStateMap.get(trackKey);
+        options.onEvent?.({ type: "permission_denied", name: call.name });
+        return {
+          type: "tool_result",
+          toolCallId: call.id,
+          content:
+            "Permission denied by user. Do not retry this action; inform the user that the operation was cancelled.",
+          isError: true,
+        };
+      }
 
-        // Check if model is repeating identical failed arguments without re-reading
-        if (track && rawInputJson === track.inputJson && !track.forcedReadDone) {
-          logAudit({
-            ts: Date.now(),
-            source: "direct",
-            tool: call.name,
-            args: call.input,
-            tier: permissions.classifyRisk?.(call.name, call.input) ?? 1,
-            decision: "denied",
-            error: "Blocked identical retry before state re-verification",
-          });
+      const rawInputJson = JSON.stringify(call.input ?? {});
+      const rawPath = (call.input as any)?.path as string | undefined;
+      const targetPath = rawPath ? normalizeResourcePath(rawPath, ws.root) : undefined;
+      const trackKey = targetPath ?? call.name;
+      const track = staleStateMap.get(trackKey);
 
-          return {
-            type: "tool_result" as const,
-            toolCallId: call.id,
-            content: `Error: Stale state retry blocked. You must inspect/read '${trackKey}' first before submitting edits.`,
-            isError: true,
-          };
-        }
+      // Check if model is repeating identical failed arguments without re-reading
+      if (track && rawInputJson === track.inputJson && !track.forcedReadDone) {
+        logAudit({
+          ts: Date.now(),
+          source: "direct",
+          tool: call.name,
+          args: call.input,
+          tier: permissions.classifyRisk?.(call.name, call.input) ?? 1,
+          decision: "denied",
+          error: "Blocked identical retry before state re-verification",
+        });
 
-        // If this is a read tool on a tracked stale resource, mark forcedReadDone
-        if (track && (call.name === "read_file" || call.name === "git_diff") && targetPath === track.targetPath) {
-          track.forcedReadDone = true;
-        }
+        return {
+          type: "tool_result",
+          toolCallId: call.id,
+          content: `Error: Stale state retry blocked. You must inspect/read '${trackKey}' first before submitting edits.`,
+          isError: true,
+        };
+      }
 
-        options.onEvent?.({ type: "tool_start", name: call.name, input: call.input });
-        if (call.name === "bash") {
-          const cmd = (call.input as any)?.command;
-          if (cmd) snapshots.recordSideEffect(`bash: ${cmd}`);
-        }
-        const result = await dispatch(registry, call.name, call.input);
+      // If this is a read tool on a tracked stale resource, mark forcedReadDone
+      if (track && (call.name === "read_file" || call.name === "git_diff") && targetPath === track.targetPath) {
+        track.forcedReadDone = true;
+      }
 
-        // Classify tool result
-        if (result.isError) {
-          const failureClass = classifyToolFailure(result.content);
+      options.onEvent?.({ type: "tool_start", name: call.name, input: call.input });
+      if (call.name === "bash") {
+        const cmd = (call.input as any)?.command;
+        if (cmd) snapshots.recordSideEffect(`bash: ${cmd}`);
+      }
 
-          if (failureClass === "stale_state") {
-            if (!track) {
-              // First stale state failure: force state re-verification and allow one retry
-              staleStateMap.set(trackKey, {
-                toolName: call.name,
-                inputJson: rawInputJson,
-                targetPath,
-                forcedReadDone: false,
-                retriedOnce: false,
-              });
+      let result: { content: string; isError: boolean };
+      try {
+        result = await dispatch(registry, call.name, call.input);
+      } catch (err: any) {
+        result = {
+          content: `Tool Execution Error: ${err instanceof Error ? err.message : String(err)}`,
+          isError: true,
+        };
+      }
 
-              logAudit({
-                ts: Date.now(),
-                source: "direct",
-                tool: call.name,
-                args: call.input,
-                tier: permissions.classifyRisk?.(call.name, call.input) ?? 1,
-                decision: "allowed",
-                resultSummary: "stale_state failure registered; forcing re-read",
-                isError: true,
-                error: result.content,
-              });
+      // Classify tool result & handle stale state recovery with retry cap
+      if (result.isError) {
+        const failureClass = classifyToolFailure(result.content);
 
-              // Inject fresh resource inspection prompt into result
-              let freshReadPrompt = "";
-              if (targetPath && call.name === "edit_file") {
-                try {
-                  const freshContent = await registry.get("read_file")?.execute({ path: targetPath });
-                  if (freshContent) {
-                    trackKey && staleStateMap.get(trackKey) && (staleStateMap.get(trackKey)!.forcedReadDone = true);
-                    freshReadPrompt = `\n\n[Forced Fresh State of ${targetPath}]:\n${freshContent}\n\nPlease update your old_string using this exact fresh content.`;
+        if (failureClass === "stale_state") {
+          if (!track) {
+            staleStateMap.set(trackKey, {
+              toolName: call.name,
+              inputJson: rawInputJson,
+              targetPath,
+              forcedReadDone: false,
+              retriedOnce: false,
+            });
 
-                    logAudit({
-                      ts: Date.now(),
-                      source: "direct",
-                      tool: "read_file",
-                      args: { path: targetPath },
-                      tier: 0,
-                      decision: "auto_approved",
-                      resultSummary: `Forced re-read for stale state on ${targetPath}`,
-                    });
-                  }
-                } catch (e) {
-                  if (process.env.DEBUG) {
-                    console.error(`[loop debug] Failed forced re-read of ${targetPath}:`, e);
-                  }
-                }
-              }
-
-              result.content = `${result.content}${freshReadPrompt}`;
-            } else if (track.retriedOnce || (rawInputJson !== track.inputJson && track.forcedReadDone)) {
-              // Failed again even after forced re-read -> escalate to permanent
-              staleStateMap.delete(trackKey);
-              logAudit({
-                ts: Date.now(),
-                source: "direct",
-                tool: call.name,
-                args: call.input,
-                tier: permissions.classifyRisk?.(call.name, call.input) ?? 1,
-                decision: "allowed",
-                resultSummary: "stale_state escalated to permanent failure after retry",
-                isError: true,
-                error: result.content,
-              });
-              result.content = `[Permanent Failure]: ${result.content}\nAction aborted after state re-verification. Do not retry this edit automatically.`;
-            }
-          }
-        } else {
-          // Successful tool call clears stale tracking for this resource
-          if (track) {
             logAudit({
               ts: Date.now(),
               source: "direct",
@@ -433,50 +430,91 @@ export async function runAgentLoop(options: LoopOptions): Promise<LLMMessage[]> 
               args: call.input,
               tier: permissions.classifyRisk?.(call.name, call.input) ?? 1,
               decision: "allowed",
-              resultSummary: `Retry succeeded on ${trackKey} after fresh state verification`,
+              resultSummary: "stale_state failure registered; forcing re-read",
+              isError: true,
+              error: result.content,
             });
+
+            let freshReadPrompt = "";
+            if (targetPath && call.name === "edit_file") {
+              try {
+                const freshContent = await registry.get("read_file")?.execute({ path: targetPath });
+                if (freshContent) {
+                  trackKey && staleStateMap.get(trackKey) && (staleStateMap.get(trackKey)!.forcedReadDone = true);
+                  freshReadPrompt = `\n\n[Forced Fresh State of ${targetPath}]:\n${freshContent}\n\nPlease update your old_string using this exact fresh content.`;
+                }
+              } catch {}
+            }
+
+            result.content = `${result.content}${freshReadPrompt}`;
+          } else {
+            // Escalate to permanent failure on repeat attempt
             staleStateMap.delete(trackKey);
+            result.content = `[Permanent Failure]: ${result.content}\nAction aborted after state re-verification. Do not retry this edit automatically.`;
           }
         }
-
-        if (call.name.startsWith("task_")) {
-          options.onEvent?.({ type: "tasks_updated", tasks: taskStore.list() });
+      } else {
+        if (track) {
+          staleStateMap.delete(trackKey);
         }
+      }
 
-        // Run postToolUse hooks asynchronously
-        if (options.hooks?.postToolUse && options.hooks.postToolUse.length > 0) {
-          runHooks("postToolUse", options.hooks, {
-            event: "postToolUse",
-            tool: call.name,
-            input: call.input,
-            sessionId: options.sessionId,
-            workspaceRoot: ws.root,
-            result: {
-              content: result.content,
-              isError: result.isError,
-            },
-          }).catch((err) => {
-            if (process.env.DEBUG) {
-              console.error(`[loop debug] postToolUse hook error for ${call.name}:`, err);
-            }
-          });
-        }
+      if (call.name.startsWith("task_")) {
+        options.onEvent?.({ type: "tasks_updated", tasks: taskStore.list() });
+      }
 
-        options.onEvent?.({
+      // Run postToolUse hooks asynchronously
+      if (options.hooks?.postToolUse && options.hooks.postToolUse.length > 0) {
+        runHooks("postToolUse", options.hooks, {
+          event: "postToolUse",
+          tool: call.name,
+          input: call.input,
+          sessionId: options.sessionId,
+          workspaceRoot: ws.root,
+          result: {
+            content: result.content,
+            isError: result.isError,
+          },
+        }).catch(() => {});
+      }
+
+      options.onEvent?.({
+        type: "tool_result",
+        name: call.name,
+        content: result.content,
+        isError: result.isError,
+      });
+
+      return {
+        type: "tool_result",
+        toolCallId: call.id,
+        content: result.content,
+        isError: result.isError,
+      };
+    };
+
+    // 1. Execute Read-Only tools in Parallel
+    const readPromises = readIndices.map(async (i) => {
+      results[i] = await executeToolIndex(i);
+    });
+    await Promise.allSettled(readPromises);
+
+    // 2. Execute Mutating tools Sequentially in Emitted Order
+    for (const i of mutateIndices) {
+      results[i] = await executeToolIndex(i);
+    }
+
+    // Ensure all toolCalls have a valid tool_result even on abort
+    for (let i = 0; i < toolCalls.length; i++) {
+      if (!results[i]) {
+        results[i] = {
           type: "tool_result",
-          name: call.name,
-          content: result.content,
-          isError: result.isError,
-        });
-
-        return {
-          type: "tool_result" as const,
-          toolCallId: call.id,
-          content: result.content,
-          isError: result.isError,
+          toolCallId: toolCalls[i].id,
+          content: "Operation interrupted before execution.",
+          isError: true,
         };
-      })
-    );
+      }
+    }
 
     messages.push({ role: "user", content: results });
 
