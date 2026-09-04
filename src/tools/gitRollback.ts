@@ -28,12 +28,16 @@ interface SerializedGitTurnCheckpoint {
   sideEffects: string[];
 }
 
-async function runGit(args: string[], cwd: string): Promise<{ stdout: string; stderr: string; success: boolean }> {
+async function runGit(
+  args: string[],
+  cwd: string,
+  extraEnv?: Record<string, string>
+): Promise<{ stdout: string; stderr: string; success: boolean }> {
   try {
     const res = await execFileAsync("git", args, {
       cwd,
       maxBuffer: 20 * 1024 * 1024,
-      env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+      env: { ...process.env, GIT_TERMINAL_PROMPT: "0", ...extraEnv },
     });
     return { stdout: res.stdout, stderr: res.stderr, success: true };
   } catch (err: any) {
@@ -136,11 +140,13 @@ export class GitCheckpointManager {
         }
       }
 
-      // Create durable snapshot ref in git object store
+      // Create durable snapshot ref in git object store using isolated temporary index
       try {
-        const indexTmp = path.join(workspaceRoot, ".git", `ruid-index-${turnNumber}.tmp`);
-        await runGit(["add", "-A", "--force", "."], workspaceRoot);
-        const writeTree = await runGit(["write-tree"], workspaceRoot);
+        const indexTmp = path.join(snapshotsDir(), `ruid-index-${Date.now()}-${turnNumber}.tmp`);
+        const env = { GIT_INDEX_FILE: indexTmp };
+        // Stage non-ignored files into temporary index without touching primary git index
+        await runGit(["add", "-A", "."], workspaceRoot, env);
+        const writeTree = await runGit(["write-tree"], workspaceRoot, env);
         if (writeTree.success && writeTree.stdout.trim()) {
           const treeSha = writeTree.stdout.trim();
           const headCommit = (await runGit(["rev-parse", "HEAD"], workspaceRoot)).stdout.trim();
