@@ -182,7 +182,9 @@ export function App({
 
   const viewportHeight = Math.max(5, rows - overhead);
   const currentConfig = loadConfig();
-  const activeProviderConfig = currentConfig.providers[state.providerName];
+  const activeProviderConfig =
+    currentConfig.providers[state.providerName] ??
+    (state.providerName === "openai-compatible" ? currentConfig.providers[currentConfig.default.provider] : undefined);
   const { version: currentVersion } = getLocalPackageInfo();
 
   return (

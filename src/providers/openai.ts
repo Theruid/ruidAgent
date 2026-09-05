@@ -55,7 +55,7 @@ export async function listModels(config: ProviderConfig): Promise<string[]> {
   return [...new Set(ids)].sort();
 }
 
-export function createOpenAIProvider(config: ProviderConfig): LLMProvider {
+export function createOpenAIProvider(config: ProviderConfig, name = "openai-compatible"): LLMProvider {
   const apiKey = resolveApiKey(config);
 
   if (!apiKey && !isLocalBase(resolveBaseUrl(config))) {
@@ -67,7 +67,7 @@ export function createOpenAIProvider(config: ProviderConfig): LLMProvider {
   const baseUrl = resolveBaseUrl(config);
 
   return {
-    name: "openai-compatible",
+    name,
     config,
 
     capabilities(model?: string): ModelCapabilities {

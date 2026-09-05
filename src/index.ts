@@ -12,7 +12,7 @@ export function createProvider(name: string, cfg: ProviderConfig): LLMProvider {
     case "anthropic":
       return createAnthropicProvider(cfg);
     case "openai":
-      return createOpenAIProvider(cfg);
+      return createOpenAIProvider(cfg, name);
     default:
       throw new Error(`Unknown provider type "${(cfg as any).type}" for "${name}"`);
   }
@@ -159,6 +159,7 @@ Options (headless):
   const { startTui } = await import("./ui/controller.js");
   startTui({
     provider,
+    providerName: name,
     model: model ?? "",
     resolveProvider: () => {
       const fresh = loadConfig();

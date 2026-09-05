@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { spawn, execSync, type ChildProcess } from "node:child_process";
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Workspace } from "./fs.js";
 import { ensureConfigDir } from "../config.js";
@@ -224,6 +224,7 @@ export class ProcessManager {
   spawnBackground(command: string, cwd: string): ProcessInfo {
     const id = `proc_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
     const logFilePath = join(this.taskLogsDir(), `${id}.log`);
+    writeFileSync(logFilePath, "", "utf8");
     const shell = getShell();
     const isWindows = process.platform === "win32";
 

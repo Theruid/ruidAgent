@@ -63,6 +63,7 @@ function resolveAtFileMentions(prompt: string, workspaceRoot: string): string {
 
 export interface TuiOptions {
   provider: LLMProvider | null;
+  providerName?: string;
   model: string;
   resolveProvider?: () => { name: string; cfg: ProviderConfig; model: string | undefined };
 }
@@ -85,8 +86,9 @@ const AUTO_APPROVE = new Set([
 
 export function startTui(options: TuiOptions): void {
   const initialCaps = options.provider?.capabilities ? options.provider.capabilities(options.model) : undefined;
+  const resolvedName = options.providerName ?? options.provider?.name ?? "";
   const store = new AgentUIStore(
-    options.provider?.name ?? "",
+    resolvedName,
     options.model ?? "",
     options.provider !== null && Boolean(options.model),
     "code",
@@ -94,7 +96,7 @@ export function startTui(options: TuiOptions): void {
   );
 
   let active: { name: string; provider: LLMProvider } | null = options.provider
-    ? { name: options.provider.name, provider: options.provider }
+    ? { name: resolvedName, provider: options.provider }
     : null;
 
   let model = options.model;
