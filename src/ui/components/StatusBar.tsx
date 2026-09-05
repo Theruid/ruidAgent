@@ -13,7 +13,6 @@ export function StatusBar({
   connected,
   capabilities,
   thinkingEnabled,
-  msgCount,
   running,
   mode = "code",
   taskCount = 0,
@@ -21,14 +20,13 @@ export function StatusBar({
   skillCount = 0,
   usage,
   lastTurnLatencyMs,
-  version,
 }: {
   providerName: string;
   model: string;
   connected: boolean;
   capabilities?: ModelCapabilities;
   thinkingEnabled?: boolean;
-  msgCount: number;
+  msgCount?: number;
   running: boolean;
   mode?: AgentMode;
   taskCount?: number;
@@ -74,6 +72,13 @@ export function StatusBar({
   const contextColor = contextPct > 85 ? "red" : contextPct > 70 ? "yellow" : "cyan";
   const contextStr = currentTokens > 0 ? ` · ctx ${contextPct}%` : "";
 
+  const rightItems: string[] = [];
+  if (mcpCount > 0) rightItems.push(`⚡ ${mcpCount} MCP`);
+  if (skillCount > 0) rightItems.push(`${skillCount} skills`);
+  if (taskCount > 0) rightItems.push(`${taskCount} tasks`);
+  const rightStr = rightItems.join(" · ");
+  const showRight = running || rightStr.length > 0;
+
   return (
     <Box justifyContent="space-between" paddingX={1} marginTop={0}>
       <Box>
@@ -81,7 +86,7 @@ export function StatusBar({
           [{modeLabel}]
         </Text>
         <Text dimColor>
-          {" "}{version ? `v${version} · ` : ""}{connected ? `${providerName} · ${model || "(no model)"}${thinkingBadge}` : "not connected — /setup"}
+          {" "}{connected ? `${providerName} · ${model || "(no model)"}${thinkingBadge}` : "not connected — /setup"}
         </Text>
         {currentTokens > 0 && (
           <Text color={contextColor}>
@@ -99,15 +104,14 @@ export function StatusBar({
         </Box>
       )}
 
-      <Box>
-        <Text dimColor>
-          {running ? `${SPIN[frame % SPIN.length]} ` : ""}
-          {mcpCount > 0 ? `⚡ ${mcpCount} MCP · ` : ""}
-          {skillCount > 0 ? `${skillCount} skills · ` : ""}
-          {taskCount > 0 ? `${taskCount} tasks · ` : ""}
-          {msgCount} msgs · <Text color="yellow">Tab: mode</Text>
-        </Text>
-      </Box>
+      {showRight && (
+        <Box>
+          <Text dimColor>
+            {running ? `${SPIN[frame % SPIN.length]}${rightStr ? " " : ""}` : ""}
+            {rightStr}
+          </Text>
+        </Box>
+      )}
     </Box>
   );
 }

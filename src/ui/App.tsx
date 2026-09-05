@@ -268,7 +268,6 @@ export function App({
         connected={state.connected}
         capabilities={state.capabilities}
         thinkingEnabled={state.thinkingEnabled}
-        msgCount={state.turnCount}
         running={state.phase === "running"}
         mode={state.mode}
         taskCount={state.tasks.length}
@@ -276,7 +275,6 @@ export function App({
         skillCount={state.skillCount}
         usage={state.sessionUsage}
         lastTurnLatencyMs={state.lastTurnDurationMs}
-        version={currentVersion}
       />
     </Box>
   );
