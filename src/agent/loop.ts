@@ -34,6 +34,8 @@ export interface LoopOptions {
   permissions?: PermissionManager;
   signal?: AbortSignal;
   onEvent?: (event: LoopEvent) => void;
+  /** Events emitted by tools that run nested agent loops (e.g. subagents). */
+  onSubagentEvent?: (event: LoopEvent) => void;
   maxContextTokens?: number;
   thinkingEnabled?: boolean;
   taskStore?: TaskStore;
@@ -50,10 +52,10 @@ export interface LoopOptions {
 export type LoopEvent =
   | { type: "text_delta"; text: string }
   | { type: "thought_delta"; text: string }
-  | { type: "tool_start"; name: string; input?: unknown }
-  | { type: "tool_result"; name: string; content: string; isError: boolean }
-  | { type: "permission_request"; name: string; input?: unknown }
-  | { type: "permission_denied"; name: string }
+  | { type: "tool_start"; name: string; input?: unknown; toolCallId?: string }
+  | { type: "tool_result"; name: string; content: string; isError: boolean; toolCallId?: string }
+  | { type: "permission_request"; name: string; input?: unknown; toolCallId?: string }
+  | { type: "permission_denied"; name: string; toolCallId?: string }
   | {
       type: "usage";
       inputTokens: number;
@@ -97,7 +99,7 @@ export async function runAgentLoop(options: LoopOptions): Promise<LLMMessage[]> 
     model: options.model,
     signal: options.signal,
     processManager,
-    onSubagentEvent: options.onEvent,
+    onSubagentEvent: options.onSubagentEvent ?? options.onEvent,
     mcpClients: options.mcpClients ?? [],
   });
 
@@ -286,7 +288,7 @@ export async function runAgentLoop(options: LoopOptions): Promise<LLMMessage[]> 
         approvals.push(true);
         continue;
       }
-      options.onEvent?.({ type: "permission_request", name: call.name, input: call.input });
+      options.onEvent?.({ type: "permission_request", name: call.name, input: call.input, toolCallId: call.id });
       approvals.push(await permissions.check(call.name, call.input));
     }
 
@@ -352,7 +354,7 @@ export async function runAgentLoop(options: LoopOptions): Promise<LLMMessage[]> 
           };
         }
 
-        options.onEvent?.({ type: "permission_denied", name: call.name });
+        options.onEvent?.({ type: "permission_denied", name: call.name, toolCallId: call.id });
         return {
           type: "tool_result",
           toolCallId: call.id,
@@ -393,7 +395,7 @@ export async function runAgentLoop(options: LoopOptions): Promise<LLMMessage[]> 
         track.forcedReadDone = true;
       }
 
-      options.onEvent?.({ type: "tool_start", name: call.name, input: call.input });
+      options.onEvent?.({ type: "tool_start", name: call.name, input: call.input, toolCallId: call.id });
       if (call.name === "bash") {
         const cmd = (call.input as any)?.command;
         if (cmd) snapshots.recordSideEffect(`bash: ${cmd}`);
@@ -483,6 +485,7 @@ export async function runAgentLoop(options: LoopOptions): Promise<LLMMessage[]> 
         name: call.name,
         content: result.content,
         isError: result.isError,
+        toolCallId: call.id,
       });
 
       return {

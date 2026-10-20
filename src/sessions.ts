@@ -29,8 +29,8 @@ export function getProjectStorageDir(workspaceRoot: string = process.cwd()): str
   return dir;
 }
 
-function sessionsDir(): string {
-  const dir = join(getProjectStorageDir(), "sessions");
+function sessionsDir(workspaceRoot: string = process.cwd()): string {
+  const dir = join(getProjectStorageDir(workspaceRoot), "sessions");
   mkdirSync(dir, { recursive: true });
   return dir;
 }
@@ -82,45 +82,50 @@ export function migrateSession(raw: any): StoredSession {
   return session;
 }
 
-export function saveSession(sess: Omit<StoredSession, "schemaVersion"> & { schemaVersion?: number }): void {
-  mkdirSync(sessionsDir(), { recursive: true });
+export function saveSession(
+  sess: Omit<StoredSession, "schemaVersion"> & { schemaVersion?: number },
+  workspaceRoot: string = process.cwd(),
+): void {
+  const dir = sessionsDir(workspaceRoot);
+  mkdirSync(dir, { recursive: true });
   const fullSession: StoredSession = {
     ...sess,
     schemaVersion: CURRENT_SESSION_SCHEMA_VERSION,
     updatedAt: Date.now(),
   };
-  const targetFile = join(sessionsDir(), `${fullSession.id}.json`);
-  const tempFile = join(sessionsDir(), `${fullSession.id}.json.tmp`);
+  const targetFile = join(dir, `${fullSession.id}.json`);
+  const tempFile = join(dir, `${fullSession.id}.json.tmp`);
   const serialized = redactSecrets(JSON.stringify(fullSession, null, 2));
   writeFileSync(tempFile, serialized, "utf8");
   renameSync(tempFile, targetFile);
 
   // Also append to JSONL session event log
-  const jsonlFile = join(sessionsDir(), `${fullSession.id}.jsonl`);
+  const jsonlFile = join(dir, `${fullSession.id}.jsonl`);
   const eventLine = JSON.stringify({ ts: Date.now(), event: "session_snapshot", session: fullSession }) + "\n";
   try {
     appendFileSync(jsonlFile, redactSecrets(eventLine), "utf8");
   } catch {}
 }
 
-export function deleteSession(id: string): void {
-  const file = join(sessionsDir(), `${id}.json`);
+export function deleteSession(id: string, workspaceRoot: string = process.cwd()): void {
+  const dir = sessionsDir(workspaceRoot);
+  const file = join(dir, `${id}.json`);
   if (existsSync(file)) unlinkSync(file);
-  const jsonl = join(sessionsDir(), `${id}.jsonl`);
+  const jsonl = join(dir, `${id}.jsonl`);
   if (existsSync(jsonl)) unlinkSync(jsonl);
 }
 
-export function listSessions(): StoredSession[] {
+export function listSessions(workspaceRoot: string = process.cwd()): StoredSession[] {
   let files: string[] = [];
   try {
-    files = readdirSync(sessionsDir()).filter((f) => f.endsWith(".json"));
+    files = readdirSync(sessionsDir(workspaceRoot)).filter((f) => f.endsWith(".json"));
   } catch {
     return [];
   }
   const sessions: StoredSession[] = [];
   for (const f of files) {
     try {
-      const raw = JSON.parse(readFileSync(join(sessionsDir(), f), "utf8"));
+      const raw = JSON.parse(readFileSync(join(sessionsDir(workspaceRoot), f), "utf8"));
       if (typeof raw?.id === "string" && Array.isArray(raw?.messages)) {
         sessions.push(migrateSession(raw));
       }
@@ -131,20 +136,23 @@ export function listSessions(): StoredSession[] {
   return sessions.sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
-export function loadSession(id: string): StoredSession | null {
+export function loadSession(id: string, workspaceRoot: string = process.cwd()): StoredSession | null {
   try {
-    const raw = JSON.parse(readFileSync(join(sessionsDir(), `${id}.json`), "utf8"));
+    const raw = JSON.parse(readFileSync(join(sessionsDir(workspaceRoot), `${id}.json`), "utf8"));
     return migrateSession(raw);
   } catch {
     return null;
   }
 }
 
-export function searchSessions(query: string): Array<StoredSession & { snippet?: string }> {
+export function searchSessions(
+  query: string,
+  workspaceRoot: string = process.cwd(),
+): Array<StoredSession & { snippet?: string }> {
   const q = query.toLowerCase().trim();
-  if (!q) return listSessions();
+  if (!q) return listSessions(workspaceRoot);
 
-  const sessions = listSessions();
+  const sessions = listSessions(workspaceRoot);
   const matched: Array<StoredSession & { snippet?: string }> = [];
 
   for (const sess of sessions) {

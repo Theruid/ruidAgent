@@ -1,10 +1,31 @@
 import * as path from "node:path";
+import { createRequire } from "node:module";
 
 let tsModule: any = null;
-try {
-  tsModule = await import("typescript").then((m) => m.default ?? m).catch(() => null);
-} catch {
-  // If typescript is unavailable, syntax checking gracefully falls back
+let tsLoadAttempted = false;
+
+/**
+ * Loads the TypeScript compiler lazily and synchronously.
+ *
+ * This module is shared by the ESM CLI and the bundled CJS Electron main
+ * process, so it resolves the compiler through `require` when available and
+ * falls back to `createRequire` for native ESM. Syntax checking degrades
+ * gracefully when the compiler is not installed.
+ */
+function loadTypeScript(): any {
+  if (tsLoadAttempted) return tsModule;
+  tsLoadAttempted = true;
+
+  try {
+    const requireFn =
+      typeof require === "function" ? require : createRequire(import.meta.url);
+    const loaded = requireFn("typescript");
+    tsModule = loaded?.default ?? loaded;
+  } catch {
+    tsModule = null;
+  }
+
+  return tsModule;
 }
 
 export interface DiagnosticResult {
@@ -16,7 +37,8 @@ export interface DiagnosticResult {
  * Rapidly verifies syntax and reports parse/compiler errors on TypeScript and JavaScript files.
  */
 export function checkFileSyntax(filePath: string, content: string): DiagnosticResult {
-  if (!tsModule) {
+  const ts = loadTypeScript();
+  if (!ts) {
     return { hasErrors: false, messages: [] };
   }
 
@@ -30,18 +52,18 @@ export function checkFileSyntax(filePath: string, content: string): DiagnosticRe
 
   const scriptKind =
     ext === ".tsx"
-      ? tsModule.ScriptKind.TSX
+      ? ts.ScriptKind.TSX
       : ext === ".ts"
-        ? tsModule.ScriptKind.TS
+        ? ts.ScriptKind.TS
         : ext === ".jsx"
-          ? tsModule.ScriptKind.JSX
-          : tsModule.ScriptKind.JS;
+          ? ts.ScriptKind.JSX
+          : ts.ScriptKind.JS;
 
   try {
-    const sourceFile = tsModule.createSourceFile(
+    const sourceFile = ts.createSourceFile(
       filePath,
       content,
-      tsModule.ScriptTarget.Latest,
+      ts.ScriptTarget.Latest,
       true,
       scriptKind
     );
