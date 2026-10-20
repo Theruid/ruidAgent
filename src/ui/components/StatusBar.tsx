@@ -1,11 +1,9 @@
-import React, { useState, useEffect } from "react";
+import React from "react";
 import { Box, Text } from "ink";
 import type { SessionUsage } from "../store.js";
 import type { AgentMode } from "../../permissions.js";
 import type { ModelCapabilities } from "../../providers/types.js";
 import { formatTokenCount, formatCost, formatLatency } from "../utils/pricing.js";
-
-const SPIN = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏";
 
 export function StatusBar({
   providerName,
@@ -13,7 +11,6 @@ export function StatusBar({
   connected,
   capabilities,
   thinkingEnabled,
-  running,
   mode = "code",
   taskCount = 0,
   mcpCount = 0,
@@ -27,7 +24,6 @@ export function StatusBar({
   capabilities?: ModelCapabilities;
   thinkingEnabled?: boolean;
   msgCount?: number;
-  running: boolean;
   mode?: AgentMode;
   taskCount?: number;
   mcpCount?: number;
@@ -36,13 +32,6 @@ export function StatusBar({
   lastTurnLatencyMs?: number;
   version?: string;
 }) {
-  const [frame, setFrame] = useState(0);
-  useEffect(() => {
-    if (!running) return;
-    const t = setInterval(() => setFrame((f) => f + 1), 120);
-    return () => clearInterval(t);
-  }, [running]);
-
   const hasUsage = usage && (usage.inputTokens > 0 || usage.outputTokens > 0);
   const inStr = usage ? formatTokenCount(usage.inputTokens) : "0";
   const cachedStr = usage?.cacheReadInputTokens ? ` (${formatTokenCount(usage.cacheReadInputTokens)} cached)` : "";
@@ -77,7 +66,7 @@ export function StatusBar({
   if (skillCount > 0) rightItems.push(`${skillCount} skills`);
   if (taskCount > 0) rightItems.push(`${taskCount} tasks`);
   const rightStr = rightItems.join(" · ");
-  const showRight = running || rightStr.length > 0;
+  const showRight = rightStr.length > 0;
 
   return (
     <Box justifyContent="space-between" paddingX={1} marginTop={0}>
@@ -107,7 +96,6 @@ export function StatusBar({
       {showRight && (
         <Box>
           <Text dimColor>
-            {running ? `${SPIN[frame % SPIN.length]}${rightStr ? " " : ""}` : ""}
             {rightStr}
           </Text>
         </Box>

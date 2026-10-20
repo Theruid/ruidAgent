@@ -125,6 +125,23 @@ describe("AgentUIStore & State Transitions (store.ts)", () => {
     assert.strictEqual(receiptMsg.turnReceipt?.commandsRun, 0);
   });
 
+  it("commits streamed text before appending the tool row that followed it", () => {
+    const store = new AgentUIStore("deepseek", "deepseek-chat", true);
+    store.beginTurn();
+
+    store.applyLoopEvent({ type: "text_delta", text: "Let me check that file." });
+    store.applyLoopEvent({ type: "tool_start", name: "read_file", input: { path: "a.ts" }, toolCallId: "c1" });
+
+    const rows = store.getState().messages;
+    assert.strictEqual(rows.length, 2);
+    assert.strictEqual(rows[0].kind, "assistant");
+    assert.strictEqual(rows[0].text, "Let me check that file.");
+    assert.strictEqual(rows[1].kind, "tool");
+    assert.strictEqual(rows[1].toolName, "read_file");
+
+    store.endTurn([]);
+  });
+
   it("handles permission request and callback resolution", () => {
     const store = new AgentUIStore("anthropic", "claude-sonnet-4", true);
     let resolvedAnswer: string | null = null;
@@ -170,6 +187,71 @@ describe("AgentUIStore & State Transitions (store.ts)", () => {
     assert.strictEqual(usage.cacheReadInputTokens, 300);
     assert.ok(usage.totalCost > 0);
     assert.strictEqual(store.getState().lastTurnDurationMs, 800);
+  });
+
+  it("tracks live activity so the UI shows progress before the first token", () => {
+    const store = new AgentUIStore("deepseek", "deepseek-chat", true);
+
+    store.beginTurn();
+    assert.strictEqual(store.getState().phase, "running");
+    assert.strictEqual(store.getState().activeAction?.name, "Preparing context");
+    assert.ok(store.getState().turnStartedAt > 0);
+
+    store.applyLoopEvent({ type: "iteration", count: 1 });
+    assert.strictEqual(store.getState().activeAction?.name, "Generating answer");
+
+    store.applyLoopEvent({ type: "thought_delta", text: "Thinking about it" });
+    assert.strictEqual(store.getState().activeAction?.name, "Thinking");
+
+    store.applyLoopEvent({ type: "text_delta", text: "Hi!" });
+    assert.strictEqual(store.getState().activeAction?.name, "Generating answer");
+
+    // Tool activity names the exact tool being called.
+    store.applyLoopEvent({ type: "tool_start", name: "bash", input: { command: "npm test" } });
+    assert.strictEqual(store.getState().activeAction?.name, "Running bash");
+    assert.strictEqual(store.getState().activeAction?.detail, "npm test");
+
+    // A finished tool keeps the row alive until the next step reports in,
+    // so the activity line does not flicker between tool calls.
+    store.applyLoopEvent({ type: "tool_result", name: "bash", content: "ok", isError: false });
+    assert.strictEqual(store.getState().activeAction?.name, "Running bash");
+
+    // The follow-up request names the tools its answer is based on.
+    store.applyLoopEvent({ type: "iteration", count: 2 });
+    assert.strictEqual(store.getState().activeAction?.name, "Reviewing results");
+    assert.strictEqual(store.getState().activeAction?.detail, "bash");
+
+    store.endTurn([]);
+    assert.strictEqual(store.getState().activeAction, null);
+    assert.strictEqual(store.getState().turnStartedAt, 0);
+  });
+
+  it("aggregates parallel tool calls into one activity label", () => {
+    const store = new AgentUIStore("deepseek", "deepseek-chat", true);
+    store.beginTurn();
+
+    store.applyLoopEvent({ type: "tool_start", name: "read_file", input: { path: "a.ts" }, toolCallId: "c1" });
+    store.applyLoopEvent({ type: "tool_start", name: "grep", input: { pattern: "foo" }, toolCallId: "c2" });
+
+    assert.strictEqual(store.getState().activeAction?.name, "Running 2 tools");
+    assert.strictEqual(store.getState().activeAction?.detail, "read_file, grep");
+
+    // One finishing leaves the survivor as the named activity.
+    store.applyLoopEvent({ type: "tool_result", name: "read_file", content: "x", isError: false, toolCallId: "c1" });
+    assert.strictEqual(store.getState().activeAction?.name, "Running grep");
+
+    store.applyLoopEvent({ type: "tool_result", name: "grep", content: "y", isError: false, toolCallId: "c2" });
+    store.endTurn([]);
+    assert.strictEqual(store.getState().activeAction, null);
+  });
+
+  it("flags a pending permission prompt as the current activity", () => {
+    const store = new AgentUIStore("anthropic", "claude-sonnet-4", true);
+    store.beginTurn();
+    store.applyLoopEvent({ type: "permission_request", name: "bash", input: { command: "rm -rf dist" } });
+
+    assert.strictEqual(store.getState().activeAction?.name, "Awaiting your approval");
+    assert.strictEqual(store.getState().activeAction?.detail, "bash");
   });
 
   it("clears chat and loads messages", () => {

@@ -32,3 +32,15 @@ export function wrapText(text: string, maxWidth: number): string[] {
 
   return result.length > 0 ? result : [""];
 }
+
+/**
+ * Truncates a single line to fit `max` terminal cells, appending an ellipsis.
+ * Uses code points so surrogate pairs and braille/emoji glyphs are not split.
+ */
+export function truncateLine(text: string, max: number): string {
+  if (max <= 0) return "";
+  const chars = Array.from(text);
+  if (chars.length <= max) return text;
+  if (max <= 1) return "…";
+  return chars.slice(0, max - 1).join("") + "…";
+}

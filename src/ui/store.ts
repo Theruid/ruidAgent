@@ -38,6 +38,16 @@ export interface ViewMessage {
   turnReceipt?: TurnReceipt;
 }
 
+/** What the agent is doing right now — drives the live activity line. */
+export interface ActiveAction {
+  /** Short verb phrase, e.g. "Waiting for model", "Thinking", "read_file". */
+  name: string;
+  /** Optional target/context, e.g. "src/ui/store.ts" or "npm test". */
+  detail?: string;
+  /** When this step started (ms epoch) — drives its own elapsed timer. */
+  startedAt: number;
+}
+
 export interface PendingPermission {
   toolName: string;
   input?: unknown;
@@ -77,7 +87,9 @@ export interface UIState {
   skillCount: number;
   customSkills: CommandItem[];
   memoryCount: number;
-  activeAction: { name: string; detail?: string; startedAt: number } | null;
+  activeAction: ActiveAction | null;
+  /** When the current turn started (ms epoch), 0 while idle. */
+  turnStartedAt: number;
 }
 
 // Framework-free store so non-React code (agent loop callbacks) can push
@@ -114,6 +126,10 @@ export class AgentUIStore {
   private toolStartTimes = new Map<string, number>();
   private turnStartedAt = 0;
   private turnCostBefore = 0;
+  /** Tool names invoked during this turn, in first-call order (deduped). */
+  private toolsThisTurn = new Set<string>();
+  /** Tool calls currently executing, keyed by tool-call id. */
+  private runningTools = new Map<string, { title: string; detail?: string; startedAt: number }>();
 
   constructor(
     providerName: string,
@@ -154,6 +170,7 @@ export class AgentUIStore {
       customSkills: [],
       memoryCount: 0,
       activeAction: null,
+      turnStartedAt: 0,
     };
   }
 
@@ -272,7 +289,16 @@ export class AgentUIStore {
     this.nextId = 1;
     this.thoughtStartTime = null;
     this.thoughtDurationMs = null;
-    this.set({ messages: [], streamingText: "", streamingThought: "", streamingThoughtDurationMs: undefined, turnCount: 0, scrollOffset: 0 }, true);
+    this.set({
+      messages: [],
+      streamingText: "",
+      streamingThought: "",
+      streamingThoughtDurationMs: undefined,
+      turnCount: 0,
+      scrollOffset: 0,
+      activeAction: null,
+      turnStartedAt: 0,
+    }, true);
   }
 
   loadMessages(messages: ViewMessage[]): void {
@@ -287,6 +313,8 @@ export class AgentUIStore {
         streamingThoughtDurationMs: undefined,
         turnCount: messages.filter((m) => m.kind !== "tool").length,
         scrollOffset: 0,
+        activeAction: null,
+        turnStartedAt: 0,
       },
       true,
     );
@@ -301,7 +329,20 @@ export class AgentUIStore {
     this.thoughtDurationMs = null;
     this.turnStartedAt = Date.now();
     this.turnCostBefore = this.state.sessionUsage.totalCost;
-    this.set({ phase: "running", streamingText: "", streamingThought: "", streamingThoughtDurationMs: undefined, notice: null, scrollOffset: 0, activeAction: null }, true);
+    this.toolsThisTurn.clear();
+    this.runningTools.clear();
+    // Show activity immediately: the request may sit in prompt assembly and
+    // network latency for many seconds before the first token arrives.
+    this.set({
+      phase: "running",
+      streamingText: "",
+      streamingThought: "",
+      streamingThoughtDurationMs: undefined,
+      notice: null,
+      scrollOffset: 0,
+      activeAction: { name: "Preparing context", startedAt: this.turnStartedAt },
+      turnStartedAt: this.turnStartedAt,
+    }, true);
   }
 
   addUserMessage(text: string): void {
@@ -312,31 +353,58 @@ export class AgentUIStore {
     );
   }
 
+  /** Activity label describing the tool calls currently in flight. */
+  private runningToolsAction(): ActiveAction {
+    const entries = Array.from(this.runningTools.values());
+    const startedAt = entries.length > 0 ? Math.min(...entries.map((e) => e.startedAt)) : Date.now();
+    if (entries.length === 1) {
+      return { name: `Running ${entries[0].title}`, detail: entries[0].detail, startedAt };
+    }
+    const names = entries.map((e) => e.title);
+    const shown = names.slice(0, 3).join(", ");
+    return {
+      name: `Running ${names.length} tools`,
+      detail: names.length > 3 ? `${shown} +${names.length - 3}` : shown,
+      startedAt,
+    };
+  }
+
   applyLoopEvent(e: LoopEvent): void {
     switch (e.type) {
-      case "text_delta":
+      case "text_delta": {
         if (this.thoughtStartTime && this.thoughtDurationMs === null) {
           this.thoughtDurationMs = Date.now() - this.thoughtStartTime;
         }
         this.streamBuf += e.text;
+        const action = this.state.activeAction;
+        // Coalesced (not immediate): token deltas can arrive hundreds of times
+        // per second, so cap re-renders at the store's flush rate instead of
+        // re-rendering the whole tree per token.
         this.set({
           streamingText: this.streamBuf,
           streamingThoughtDurationMs: this.thoughtDurationMs ?? undefined,
-          activeAction: this.state.activeAction?.name === "Generating response" ? this.state.activeAction : { name: "Generating response", startedAt: Date.now() },
-        }, true);
+          activeAction:
+            action?.name === "Generating answer"
+              ? action
+              : { name: "Generating answer", startedAt: Date.now() },
+        });
         break;
+      }
 
-      case "thought_delta":
+      case "thought_delta": {
         if (!this.thoughtStartTime) {
           this.thoughtStartTime = Date.now();
         }
         this.thoughtBuf += e.text;
+        const action = this.state.activeAction;
         this.set({
           streamingThought: this.thoughtBuf,
           streamingThoughtDurationMs: Date.now() - this.thoughtStartTime,
-          activeAction: this.state.activeAction?.name === "Thinking" ? this.state.activeAction : { name: "Thinking", startedAt: Date.now() },
-        }, true);
+          activeAction:
+            action?.name === "Thinking" ? action : { name: "Thinking", startedAt: Date.now() },
+        });
         break;
+      }
 
       case "tool_start": {
         this.toolStartTimes.set(e.name, Date.now());
@@ -354,14 +422,27 @@ export class AgentUIStore {
             badgeDetail: badge.detail,
           },
         };
-        // Flush any buffered assistant text into its own row before the tool row.
-        const patch: Partial<UIState> = { messages: [...this.state.messages, msg], pendingPermission: null, activeAction: { name: badge.title, detail: badge.detail, startedAt: Date.now() } };
-        if (this.streamBuf) {
-          patch.streamingText = "";
-          this.commitStreamRow(patch);
-        } else {
-          this.set(patch, true);
+        // Flush any buffered assistant text into its own row FIRST, then append
+        // the tool row — otherwise the tool renders above the message that
+        // triggered it.
+        this.toolsThisTurn.add(badge.title);
+        this.runningTools.set(e.toolCallId ?? e.name, {
+          title: badge.title,
+          detail: badge.detail,
+          startedAt: Date.now(),
+        });
+        const action = this.runningToolsAction();
+        if (this.streamBuf.trim() || this.thoughtBuf.trim()) {
+          this.commitStreamRow({ activeAction: action });
         }
+        this.set(
+          {
+            messages: [...this.state.messages, msg],
+            pendingPermission: null,
+            activeAction: action,
+          },
+          true,
+        );
         break;
       }
 
@@ -369,6 +450,7 @@ export class AgentUIStore {
         const startTime = this.toolStartTimes.get(e.name);
         const durationMs = startTime ? Date.now() - startTime : undefined;
         this.toolStartTimes.delete(e.name);
+        this.runningTools.delete(e.toolCallId ?? e.name);
 
         const messages = [...this.state.messages];
         let idx = -1;
@@ -395,7 +477,14 @@ export class AgentUIStore {
             },
           };
         }
-        this.set({ messages, pendingPermission: null, activeAction: null }, true);
+        // Keep the current action until the next step reports in — clearing it
+        // here makes the activity line flicker between tool calls. If other
+        // tools are still running (parallel batch), retarget at the survivors.
+        const remaining = this.runningTools.size > 0 ? this.runningToolsAction() : undefined;
+        this.set(
+          { messages, pendingPermission: null, ...(remaining ? { activeAction: remaining } : {}) },
+          true,
+        );
         break;
       }
 
@@ -415,7 +504,10 @@ export class AgentUIStore {
             }
           }
         }
-        this.set({ pendingPermission: { toolName: e.name, input: e.input, argsPreview } }, true);
+        this.set({
+          pendingPermission: { toolName: e.name, input: e.input, argsPreview },
+          activeAction: { name: "Awaiting your approval", detail: e.name, startedAt: Date.now() },
+        }, true);
         break;
       }
 
@@ -449,8 +541,23 @@ export class AgentUIStore {
         this.set({ tasks: e.tasks }, true);
         break;
 
-      case "iteration":
+      case "iteration": {
+        // The loop emits this right before each provider call, including the
+        // long gap between a tool result and the model's next token. Name the
+        // tools the model is now working from instead of a generic label.
+        const now = Date.now();
+        const recent = Array.from(this.toolsThisTurn).slice(-3);
+        this.set(
+          {
+            activeAction:
+              recent.length === 0
+                ? { name: "Generating answer", startedAt: now }
+                : { name: "Reviewing results", detail: recent.join(", "), startedAt: now },
+          },
+          true,
+        );
         break;
+      }
     }
   }
 
@@ -542,6 +649,7 @@ export class AgentUIStore {
     }
 
     patch.activeAction = null;
+    patch.turnStartedAt = 0;
     this.set(patch, true);
 
     // Keep only committed rows; caller decides what to do with history.

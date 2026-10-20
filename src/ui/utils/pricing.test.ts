@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert";
-import { calculateCost, formatTokenCount, formatCost, formatLatency } from "./pricing.js";
+import { calculateCost, formatTokenCount, formatCost, formatLatency, formatDuration } from "./pricing.js";
 
 describe("Pricing & Token Formatting Utilities (pricing.ts)", () => {
   it("calculates cost accurately for Anthropic Claude Sonnet 4 / 5", () => {
@@ -64,5 +64,13 @@ describe("Pricing & Token Formatting Utilities (pricing.ts)", () => {
     assert.strictEqual(formatLatency(999), "999ms");
     assert.strictEqual(formatLatency(1500), "1.5s");
     assert.strictEqual(formatLatency(12300), "12.3s");
+  });
+
+  it("formats elapsed durations with minute/hour rollover", () => {
+    assert.strictEqual(formatDuration(90), "90ms");
+    assert.strictEqual(formatDuration(2400), "2.4s");
+    assert.strictEqual(formatDuration(59_400), "59.4s");
+    assert.strictEqual(formatDuration(65_000), "1m 05s");
+    assert.strictEqual(formatDuration(3_725_000), "1h 02m");
   });
 });

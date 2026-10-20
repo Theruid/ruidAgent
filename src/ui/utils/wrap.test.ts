@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert";
-import { wrapText } from "./wrap.js";
+import { wrapText, truncateLine } from "./wrap.js";
 
 describe("Text Wrapping Utility (wrap.ts)", () => {
   it("handles empty or falsy strings", () => {
@@ -39,5 +39,27 @@ describe("Text Wrapping Utility (wrap.ts)", () => {
     const text = "Hello world from ruid";
     const res = wrapText(text, 3);
     assert.ok(res[0].length <= 10);
+  });
+});
+
+describe("Line truncation (truncateLine)", () => {
+  it("returns short text unchanged", () => {
+    assert.strictEqual(truncateLine("bash · npm test", 40), "bash · npm test");
+  });
+
+  it("appends an ellipsis when clipping", () => {
+    assert.strictEqual(truncateLine("abcdefghij", 5), "abcd…");
+    assert.strictEqual(truncateLine("abcdefghij", 5).length, 5);
+  });
+
+  it("handles degenerate widths without throwing", () => {
+    assert.strictEqual(truncateLine("abc", 0), "");
+    assert.strictEqual(truncateLine("abc", -3), "");
+    assert.strictEqual(truncateLine("abc", 1), "…");
+  });
+
+  it("does not split surrogate pairs", () => {
+    const out = truncateLine("a😀b😀c", 4);
+    assert.strictEqual(out, "a😀b…");
   });
 });

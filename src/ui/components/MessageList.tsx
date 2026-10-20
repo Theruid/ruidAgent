@@ -1,9 +1,22 @@
-import React, { memo } from "react";
+import React, { memo, useMemo } from "react";
 import { Box, Text } from "ink";
-import type { ViewMessage, TurnReceipt } from "../store.js";
-import { wrapText } from "../utils/wrap.js";
+import type { ActiveAction, ViewMessage, TurnReceipt } from "../store.js";
+import { wrapText, truncateLine } from "../utils/wrap.js";
 import { renderMarkdown } from "../utils/markdown.js";
-import { formatLatency } from "../utils/pricing.js";
+import { formatLatency, formatDuration } from "../utils/pricing.js";
+import { ActivityIndicator, Spinner } from "./ActivityIndicator.js";
+
+const USER_HEADER = "❯ you";
+const AGENT_HEADER = "✦ agent";
+
+/** First non-empty line of a (possibly long) reasoning block, clipped to width. */
+function thoughtPreview(thought: string, width: number): string {
+  const line = thought
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .find((l) => l.length > 0);
+  return line ? truncateLine(line, width) : "";
+}
 
 const READ_ONLY_TOOLS = new Set([
   "read_file", "list_dir", "glob", "grep",
@@ -12,12 +25,39 @@ const READ_ONLY_TOOLS = new Set([
   "task_list", "memory_recall", "memory_list",
 ]);
 
+export interface LiveHeader {
+  action: ActiveAction;
+  /** Fallback start time (turn start) when the action carries none. */
+  fallbackStart: number;
+  tokens?: number;
+  columns?: number;
+  paused?: boolean;
+}
+
+export interface LiveTurn {
+  running: boolean;
+  action: ActiveAction | null;
+  turnStartedAt: number;
+  paused?: boolean;
+  /**
+   * Set by the caller when a tool row is currently pending: its own spinner is
+   * already the progress indicator, so the agent-line status is suppressed.
+   */
+  suppress?: boolean;
+  /**
+   * True when this turn already printed a `✦ agent` header — later steps then
+   * show only the spinner status, without repeating the label.
+   */
+  headerShown?: boolean;
+}
+
 export interface RenderedLine {
   id: string;
   kind:
     | "user-header"
     | "user-body"
     | "thought-body"
+    | "thought-preview"
     | "assistant-header"
     | "assistant-body"
     | "tool-pending"
@@ -30,6 +70,8 @@ export interface RenderedLine {
     | "turn-receipt"
     | "blank";
   text: string;
+  /** Present on the streaming header while a turn is in flight. */
+  activity?: LiveHeader;
 }
 
 export function compileLines(
@@ -38,9 +80,19 @@ export function compileLines(
   width: number,
   streamingThought?: string,
   streamingThoughtDurationMs?: number,
+  live?: LiveTurn,
 ): RenderedLine[] {
   const contentWidth = Math.max(20, width - 4);
   const lines: RenderedLine[] = [];
+  // The agent header is printed once per user turn, not once per assistant
+  // block — a turn that interleaves text and tools stays a single "agent" run.
+  let headerShown = false;
+  /** Opens the turn with its single `✦ agent` header, wherever work starts. */
+  const openTurn = (rowId: number): void => {
+    if (headerShown) return;
+    lines.push({ id: `a-h-${rowId}`, kind: "assistant-header", text: AGENT_HEADER });
+    headerShown = true;
+  };
 
   for (let i = 0; i < messages.length; i++) {
     const m = messages[i];
@@ -49,7 +101,8 @@ export function compileLines(
     }
 
     if (m.kind === "user") {
-      lines.push({ id: `u-h-${m.id}`, kind: "user-header", text: "you" });
+      headerShown = false;
+      lines.push({ id: `u-h-${m.id}`, kind: "user-header", text: USER_HEADER });
       const wrapped = wrapText(m.text, contentWidth);
       for (let j = 0; j < wrapped.length; j++) {
         lines.push({ id: `u-b-${m.id}-${j}`, kind: "user-body", text: wrapped[j] });
@@ -59,9 +112,9 @@ export function compileLines(
       if (m.turnReceipt) {
         const r = m.turnReceipt;
         const parts: string[] = [];
+        if (r.durationMs > 0) parts.push(formatDuration(r.durationMs));
         if (r.filesChanged > 0) parts.push(`${r.filesChanged} file${r.filesChanged === 1 ? "" : "s"} modified`);
         if (r.commandsRun > 0) parts.push(`${r.commandsRun} command${r.commandsRun === 1 ? "" : "s"} run`);
-        if (r.durationMs > 0) parts.push(formatLatency(r.durationMs));
         if (r.costDelta > 0) parts.push(`$${r.costDelta.toFixed(3)}`);
         lines.push({
           id: `receipt-${m.id}`,
@@ -71,14 +124,18 @@ export function compileLines(
         continue;
       }
 
-      lines.push({ id: `a-h-${m.id}`, kind: "assistant-header", text: "agent" });
+      openTurn(m.id);
       if (m.thought) {
-        const durStr = m.thoughtDurationMs ? `for ${formatLatency(m.thoughtDurationMs)}` : "completed";
+        const durStr = m.thoughtDurationMs ? ` for ${formatLatency(m.thoughtDurationMs)}` : "";
         lines.push({
           id: `a-t-${m.id}`,
           kind: "thought-body",
-          text: `● thought ${durStr}`,
+          text: `◦ thought${durStr}`,
         });
+        const preview = thoughtPreview(m.thought, contentWidth - 2);
+        if (preview) {
+          lines.push({ id: `a-tp-${m.id}`, kind: "thought-preview", text: preview });
+        }
       }
       if (m.text) {
         const mdLines = renderMarkdown(m.text, contentWidth);
@@ -87,6 +144,7 @@ export function compileLines(
         }
       }
     } else if (m.kind === "tool") {
+      openTurn(m.id);
       // Check if this starts a run of 3+ consecutive successful read-only tools
       const isReadOnly = !m.pending && !m.toolError && m.toolName && READ_ONLY_TOOLS.has(m.toolName);
       if (isReadOnly) {
@@ -133,7 +191,7 @@ export function compileLines(
         lines.push({
           id: `t-${m.id}`,
           kind: "tool-pending",
-          text: `● ${toolName}${detail ? ` ${detail}` : ""}…`,
+          text: `${toolName}${detail ? ` ${detail}` : ""}`,
         });
       } else if (m.toolError) {
         lines.push({
@@ -161,26 +219,50 @@ export function compileLines(
     }
   }
 
-  if (streamingThought || streamingText) {
+  // While a tool row is still pending its own spinner already reports progress,
+  // so the live header would duplicate it.
+  const hasPendingTool = messages.some((m) => m.kind === "tool" && m.pending);
+  const liveHeader: LiveHeader | undefined =
+    live?.running && !live.suppress && !hasPendingTool
+      ? {
+          action: live.action ?? { name: "Working", startedAt: live.turnStartedAt },
+          fallbackStart: live.turnStartedAt,
+          tokens: Math.ceil(streamingText.length / 4) || undefined,
+          columns: width,
+          paused: live.paused,
+        }
+      : undefined;
+
+  if (streamingThought || streamingText || liveHeader) {
     if (messages.length > 0) {
       lines.push({ id: "sep-streaming", kind: "blank", text: "" });
     }
-    const headerTitle = streamingThought && !streamingText ? "agent (thinking…)" : "agent";
-    lines.push({ id: "s-h", kind: "streaming-header", text: headerTitle });
+    // Only the first output of a turn carries the `✦ agent` label.
+    const showAgentLabel = !(live?.headerShown ?? headerShown);
+    lines.push({
+      id: "s-h",
+      kind: "streaming-header",
+      text: showAgentLabel ? AGENT_HEADER : "",
+      activity: liveHeader,
+    });
 
     if (streamingThought && !streamingText) {
-      const durStr = streamingThoughtDurationMs ? ` (${formatLatency(streamingThoughtDurationMs)})` : "";
-      lines.push({
-        id: "s-th-b",
-        kind: "streaming-thought",
-        text: `● thinking…${durStr}`,
-      });
+      // Show the tail of the live reasoning so the screen keeps moving while
+      // the model thinks, instead of one static "thinking…" line.
+      const wrapped = wrapText(streamingThought.trim(), contentWidth - 2).filter((l) => l.trim().length > 0);
+      const tail = wrapped.slice(-4);
+      if (tail.length === 0) {
+        lines.push({ id: "s-th-b", kind: "streaming-thought", text: "◦ thinking…" });
+      }
+      for (let j = 0; j < tail.length; j++) {
+        lines.push({ id: `s-th-${j}`, kind: "streaming-thought", text: tail[j] });
+      }
     } else if (streamingThought && streamingText) {
-      const durStr = streamingThoughtDurationMs ? `for ${formatLatency(streamingThoughtDurationMs)}` : "completed";
+      const durStr = streamingThoughtDurationMs ? ` for ${formatLatency(streamingThoughtDurationMs)}` : "";
       lines.push({
         id: "s-th-done",
         kind: "thought-body",
-        text: `● thought ${durStr}`,
+        text: `◦ thought${durStr}`,
       });
     }
 
@@ -224,6 +306,14 @@ const MessageLine = memo(function MessageLine({ line }: { line: RenderedLine }) 
           </Text>
         </Box>
       );
+    case "thought-preview":
+      return (
+        <Box paddingLeft={3}>
+          <Text dimColor italic>
+            {line.text}
+          </Text>
+        </Box>
+      );
     case "assistant-header":
       return (
         <Box paddingLeft={1}>
@@ -239,11 +329,39 @@ const MessageLine = memo(function MessageLine({ line }: { line: RenderedLine }) 
         </Box>
       );
     case "streaming-header":
+      if (!line.text) {
+        return (
+          <Box paddingLeft={3}>
+            {line.activity && (
+              <ActivityIndicator
+                label={line.activity.action.name}
+                detail={line.activity.action.detail}
+                startedAt={line.activity.action.startedAt || line.activity.fallbackStart || Date.now()}
+                tokens={line.activity.tokens}
+                columns={line.activity.columns}
+                paused={line.activity.paused}
+              />
+            )}
+          </Box>
+        );
+      }
       return (
         <Box paddingLeft={1}>
           <Text color="cyan" bold>
             {line.text}
           </Text>
+          {line.activity && (
+            <Box paddingLeft={1}>
+              <ActivityIndicator
+                label={line.activity.action.name}
+                detail={line.activity.action.detail}
+                startedAt={line.activity.action.startedAt || line.activity.fallbackStart || Date.now()}
+                tokens={line.activity.tokens}
+                columns={line.activity.columns}
+                paused={line.activity.paused}
+              />
+            </Box>
+          )}
         </Box>
       );
     case "streaming-thought":
@@ -263,7 +381,8 @@ const MessageLine = memo(function MessageLine({ line }: { line: RenderedLine }) 
     case "tool-pending":
       return (
         <Box paddingLeft={2}>
-          <Text color="yellow">{line.text}</Text>
+          <Spinner color="yellow" />
+          <Text color="yellow"> {line.text}…</Text>
         </Box>
       );
     case "tool-success":
@@ -310,6 +429,10 @@ export function MessageList({
   viewportHeight,
   scrollOffset,
   columns,
+  running = false,
+  activeAction = null,
+  turnStartedAt = 0,
+  paused = false,
 }: {
   messages: ViewMessage[];
   streamingText: string;
@@ -318,8 +441,48 @@ export function MessageList({
   viewportHeight: number;
   scrollOffset: number;
   columns: number;
+  /** True while a turn is in flight — shows the live indicator on the agent line. */
+  running?: boolean;
+  activeAction?: ActiveAction | null;
+  turnStartedAt?: number;
+  paused?: boolean;
 }) {
-  const allLines = compileLines(messages, streamingText, columns, streamingThought, streamingThoughtDurationMs);
+  const live = useMemo<LiveTurn>(() => {
+    // Has this turn already printed an agent header for an earlier row?
+    let headerShown = false;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i];
+      if (m.kind === "user") break;
+      if (m.kind === "tool" || (m.kind === "assistant" && !m.turnReceipt)) {
+        headerShown = true;
+        break;
+      }
+    }
+    return {
+      running,
+      action: activeAction,
+      turnStartedAt,
+      paused,
+      suppress: messages.some((m) => m.kind === "tool" && m.pending),
+      headerShown,
+    };
+  }, [running, activeAction, turnStartedAt, paused, messages]);
+
+  // Committed history only changes when a row is added, so it is compiled once
+  // per structural change. Streaming deltas recompile only the live tail —
+  // otherwise every token would re-render markdown for the entire transcript.
+  const committedLines = useMemo(() => compileLines(messages, "", columns), [messages, columns]);
+  const streamingLines = useMemo(() => {
+    const block = compileLines([], streamingText, columns, streamingThought, streamingThoughtDurationMs, live);
+    if (block.length === 0) return [];
+    return messages.length > 0
+      ? [{ id: "sep-streaming", kind: "blank" as const, text: "" }, ...block]
+      : block;
+  }, [streamingText, streamingThought, streamingThoughtDurationMs, columns, messages.length, live]);
+  const allLines = useMemo(
+    () => (streamingLines.length > 0 ? [...committedLines, ...streamingLines] : committedLines),
+    [committedLines, streamingLines],
+  );
   const totalLines = allLines.length;
 
   const showIndicators = scrollOffset > 0;

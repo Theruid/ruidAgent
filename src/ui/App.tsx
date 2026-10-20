@@ -1,4 +1,4 @@
-import React, { useSyncExternalStore, useEffect, useRef, useState } from "react";
+import React, { useSyncExternalStore, useEffect, useRef, useState, useMemo } from "react";
 import { Box, Text, useInput } from "ink";
 import type { AgentUIStore, UIState } from "./store.js";
 import { MessageList } from "./components/MessageList.js";
@@ -181,11 +181,13 @@ export function App({
   }
 
   const viewportHeight = Math.max(5, rows - overhead);
-  const currentConfig = loadConfig();
+  // Reloading config reads from disk; only do it when the target provider could
+  // have changed rather than on every streamed token.
+  const currentConfig = useMemo(() => loadConfig(), [state.phase, state.providerName]);
   const activeProviderConfig =
     currentConfig.providers[state.providerName] ??
     (state.providerName === "openai-compatible" ? currentConfig.providers[currentConfig.default.provider] : undefined);
-  const { version: currentVersion } = getLocalPackageInfo();
+  const { version: currentVersion } = useMemo(() => getLocalPackageInfo(), []);
 
   return (
     <Box flexDirection="column" height={rows} paddingX={1}>
@@ -201,6 +203,10 @@ export function App({
             viewportHeight={viewportHeight}
             scrollOffset={state.scrollOffset}
             columns={columns}
+            running={state.phase === "running"}
+            activeAction={state.activeAction}
+            turnStartedAt={state.turnStartedAt}
+            paused={Boolean(state.pendingPermission)}
           />
         )}
       </Box>
@@ -254,9 +260,7 @@ export function App({
             !state.connected
               ? "Run /setup to connect a provider…"
               : state.phase === "running"
-                ? state.activeAction
-                  ? `${state.activeAction.name}${state.activeAction.detail ? `: ${state.activeAction.detail}` : ""}… (Ctrl+C to interrupt)`
-                  : "Working… (Ctrl+C to interrupt)"
+                ? "Working… (Ctrl+C to interrupt)"
                 : `Ask in [${state.mode.toUpperCase()}] mode… (Tab: mode, Ctrl+Enter: newline, @file, /help)`
           }
         />
@@ -268,7 +272,6 @@ export function App({
         connected={state.connected}
         capabilities={state.capabilities}
         thinkingEnabled={state.thinkingEnabled}
-        running={state.phase === "running"}
         mode={state.mode}
         taskCount={state.tasks.length}
         mcpCount={state.mcpServerCount}
