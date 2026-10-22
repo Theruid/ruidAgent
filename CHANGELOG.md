@@ -5,7 +5,14 @@ All notable changes to `@theruid/ruid` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.3.50] - 2026-10-22
+## [0.3.51] - 2026-10-22
+
+Contains everything listed for 0.3.50, which was tagged but never published (its CI run failed in a test).
+
+### Fixed
+- The TUI render test no longer fails in CI, where Ink disables interactive redraws.
+
+## [0.3.50] - 2026-10-22 [not published]
 
 ### Fixed
 - The screen no longer flashes on every keystroke or spinner tick in cmd and PowerShell: frames are redrawn in place, rewriting only the lines that changed.
