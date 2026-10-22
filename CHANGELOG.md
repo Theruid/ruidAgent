@@ -5,6 +5,25 @@ All notable changes to `@theruid/ruid` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.50] - 2026-10-22
+
+### Fixed
+- The screen no longer flashes on every keystroke or spinner tick in cmd and PowerShell: frames are redrawn in place, rewriting only the lines that changed.
+
+### Added
+- Line editing in the prompt: cursor keys, word jumps (Ctrl/Alt+←/→), Home/End, Ctrl+A/E/W/U/K, forward Delete, and moving between lines of a multi-line draft.
+- Type while the agent works: prompts are queued and sent when the turn ends; Esc on an empty input takes them back for editing.
+- Ctrl+O shows the full output of the latest tool call.
+- The permission prompt shows the action's risk level; Esc rejects.
+- `/help` opens a panel listing every command and key binding.
+
+### Changed
+- Esc needs a second press to clear a draft.
+- Short notices disappear on their own; long ones open in a panel closed with Esc.
+- The status bar drops detail to fit narrow terminals.
+- The finished task panel hides when the next turn starts; `/new` and `/clear` reset token and cost counters.
+- The session picker reads saved sessions once instead of on every keystroke.
+
 ## [0.3.49] - 2026-10-22
 
 ### Fixed
