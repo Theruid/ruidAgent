@@ -1,12 +1,19 @@
 import { describe, it } from "node:test";
 import assert from "node:assert";
 import React from "react";
-import { render } from "ink";
 import { PassThrough } from "node:stream";
-import { App } from "./App.js";
-import { AgentUIStore } from "./store.js";
 import { createFrameDiffStdout } from "./frameDiff.js";
 import { VirtualScreen } from "./testing/vt.js";
+
+// Ink detects CI (CI / CONTINUOUS_INTEGRATION env vars) once, when it is first
+// imported, and then only prints the final frame on exit. This test is about
+// interactive redraws, so switch that off before Ink (and App) load. Test
+// files run in their own process, so this does not leak into other tests.
+process.env.CI = "false";
+process.env.CONTINUOUS_INTEGRATION = "false";
+const { render } = await import("ink");
+const { App } = await import("./App.js");
+const { AgentUIStore } = await import("./store.js");
 
 /** A fake TTY that records everything written and replays it on a virtual screen. */
 function fakeTerminal(rows: number, columns: number) {
