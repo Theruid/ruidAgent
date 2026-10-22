@@ -201,4 +201,28 @@ describe("compileLines — agent presentation", () => {
     });
     assert.strictEqual(lines.some((l) => l.kind === "streaming-header"), false);
   });
+  it("shows an expanded tool's output and keeps it out of collapsed groups", () => {
+    const tool = (id: number, name: string, output: string): ViewMessage => ({
+      id,
+      kind: "tool",
+      text: output,
+      toolName: name,
+      toolMeta: { badgeTitle: name, output },
+    });
+    const messages: ViewMessage[] = [
+      { id: 1, kind: "user", text: "look" },
+      tool(2, "read_file", "one"),
+      tool(3, "grep", "two"),
+      tool(4, "glob", "three\nfour"),
+    ];
+    const collapsed = compileLines(messages, "", WIDTH);
+    assert.ok(collapsed.some((l) => l.text.startsWith("✔ Explored · ")));
+    assert.ok(!collapsed.some((l) => l.kind === "tool-output"));
+
+    const expanded = compileLines(messages, "", WIDTH, undefined, undefined, undefined, 4);
+    const out = expanded.filter((l) => l.kind === "tool-output").map((l) => l.text);
+    assert.deepStrictEqual(out, ["│ three", "│ four", "└ Ctrl+O to collapse"]);
+    // the expanded row is no longer folded into the group
+    assert.ok(expanded.some((l) => l.kind === "tool-success" && l.text.includes("glob")));
+  });
 });

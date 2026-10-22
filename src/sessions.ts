@@ -162,10 +162,21 @@ export function searchSessions(
   query: string,
   workspaceRoot: string = process.cwd(),
 ): Array<StoredSession & { snippet?: string }> {
-  const q = query.toLowerCase().trim();
-  if (!q) return listSessions(workspaceRoot);
+  return filterSessions(listSessions(workspaceRoot), query);
+}
 
-  const sessions = listSessions(workspaceRoot);
+/**
+ * Filters already-loaded sessions by title, id or message content. The
+ * session picker loads once and calls this per keystroke instead of
+ * re-reading every session file from disk.
+ */
+export function filterSessions(
+  sessions: StoredSession[],
+  query: string,
+): Array<StoredSession & { snippet?: string }> {
+  const q = query.toLowerCase().trim();
+  if (!q) return sessions;
+
   const matched: Array<StoredSession & { snippet?: string }> = [];
 
   for (const sess of sessions) {

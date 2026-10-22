@@ -3,7 +3,7 @@ import { Box, Text } from "ink";
 import type { AgentUIStore, PendingPermission } from "../store.js";
 import { getToolDiff, type DiffLine } from "../utils/diff.js";
 import { highlightCodeLine } from "../utils/syntax.js";
-import { permissionPreview } from "../utils/layout.js";
+import { permissionPreview, permissionFooter, riskLabel } from "../utils/layout.js";
 
 export function PermissionPrompt({
   permission,
@@ -20,6 +20,7 @@ export function PermissionPrompt({
       : null;
 
   const preview = permissionPreview(permission);
+  const risk = riskLabel(permission.tier);
 
   return (
     <Box borderStyle="round" paddingX={1} borderColor="yellow" flexDirection="column">
@@ -31,6 +32,9 @@ export function PermissionPrompt({
           <Text color="yellowBright" bold>
             {permission.toolName}
           </Text>
+          {risk && (
+            <Text color={risk.color}> · {risk.text}</Text>
+          )}
           {preview && !diff && !bashCmd && (
             <Text dimColor> ({preview})</Text>
           )}
@@ -103,10 +107,16 @@ export function PermissionPrompt({
       <Box marginTop={0}>
         <Text color="cyan">[y]</Text>
         <Text> approve · </Text>
-        <Text color="red">[n]</Text>
+        <Text color="red">[n/Esc]</Text>
         <Text> reject · </Text>
-        <Text color="magenta">[a]</Text>
-        <Text> always allow "{permission.toolName}" this session</Text>
+        {permission.tier === 4 ? (
+          <Text dimColor>always-allow is unavailable for sensitive actions</Text>
+        ) : (
+          <>
+            <Text color="magenta">[a]</Text>
+            <Text> always allow "{permission.toolName}" this session</Text>
+          </>
+        )}
       </Box>
     </Box>
   );

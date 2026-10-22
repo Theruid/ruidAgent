@@ -24,9 +24,10 @@ import { checkForUpdate, getLocalPackageInfo, performUpdate } from "../updater.j
 import { MCPClient } from "../mcp/client.js";
 import { MemoryManager } from "../memory/manager.js";
 import { SkillManager } from "../skills/loader.js";
-import type { CommandItem } from "./components/CommandPalette.js";
+import { COMMANDS, type CommandItem } from "./components/CommandPalette.js";
 import { resolveAtFileMentions } from "./utils/atMentions.js";
 import { popUserTurns } from "./utils/history.js";
+import { createFrameDiffStdout } from "./frameDiff.js";
 
 export interface TuiOptions {
   provider: LLMProvider | null;
@@ -158,6 +159,7 @@ export function startTui(options: TuiOptions): void {
       onSetupDone={() => {
         store.setPhase("idle");
         tryConnect();
+        drainQueue();
       }}
       onPickModel={pickModel}
       onPickProvider={pickProvider}
@@ -167,7 +169,14 @@ export function startTui(options: TuiOptions): void {
         store.setNotice(`Switched to [${nextMode.toUpperCase()}] mode`);
       }}
     />,
-    { exitOnCtrlC: false },
+    {
+      exitOnCtrlC: false,
+      // Rewrite only the lines that changed instead of erasing and repainting
+      // the whole frame — the full repaint is what blinks in cmd/PowerShell.
+      // (Ink's own incrementalRendering mis-places lines; see frameDiff.ts.)
+      stdout: createFrameDiffStdout(process.stdout),
+      maxFps: 30,
+    },
   );
 
   // Check for newer npm release in background
@@ -199,6 +208,7 @@ export function startTui(options: TuiOptions): void {
       store.setConnection(active?.name ?? "", model, active !== null, capsFor(model));
       store.setNotice(`Model switched to ${model}`);
     }
+    drainQueue();
   }
 
   function pickProvider(chosenProvider: string | null): void {
@@ -206,12 +216,17 @@ export function startTui(options: TuiOptions): void {
     if (chosenProvider) {
       tryConnect(chosenProvider);
     }
+    drainQueue();
   }
 
   function abortTurn(): void {
     abortController?.abort();
     // A turn blocked on an approval prompt would otherwise wait forever.
     permissions.cancelPending();
+    // Interrupting means "stop": queued follow-ups go back into the input
+    // for editing instead of starting right after.
+    const queued = store.takeQueue();
+    if (queued) store.setInputDraft(queued);
   }
 
   let abortController: AbortController | null = null;
@@ -252,7 +267,36 @@ export function startTui(options: TuiOptions): void {
     }
   }
 
+  /** True while a submitted line (turn or command) is being handled. */
+  let busy = false;
+
+  /**
+   * Entry point for every submitted line. Lines typed while another one is
+   * still being handled (usually a running turn) are queued and sent in
+   * order once it finishes.
+   */
   async function submitLine(raw: string): Promise<void> {
+    if (busy || store.getState().phase === "running") {
+      store.enqueuePrompt(raw);
+      return;
+    }
+    busy = true;
+    try {
+      await handleLine(raw);
+    } finally {
+      busy = false;
+    }
+    drainQueue();
+  }
+
+  /** Sends the next queued line once the UI is back at the prompt. */
+  function drainQueue(): void {
+    if (busy || store.getState().phase !== "idle") return;
+    const next = store.dequeuePrompt();
+    if (next !== undefined) void submitLine(next);
+  }
+
+  async function handleLine(raw: string): Promise<void> {
     // The update banner is informational; the first submitted line dismisses it.
     if (store.getState().updateInfo?.hasUpdate && raw.trim() !== "/update") {
       store.setUpdateInfo(null);
@@ -348,7 +392,10 @@ export function startTui(options: TuiOptions): void {
 
   function pickSession(id: string | null): void {
     store.setPhase("idle");
-    if (!id) return;
+    if (!id) {
+      drainQueue();
+      return;
+    }
     const sess = loadSession(id);
     if (!sess) {
       store.setNotice(`Could not load session ${id}`);
@@ -377,6 +424,7 @@ export function startTui(options: TuiOptions): void {
       store.setConnection(active?.name ?? "", model, active !== null, capsFor(model));
     }
     store.setNotice(`Resumed "${sess.title}"`);
+    drainQueue();
   }
 
   async function handleCommand(cmd: string): Promise<void> {
@@ -632,7 +680,7 @@ export function startTui(options: TuiOptions): void {
       }
 
       case "help":
-        store.setNotice("/new /resume /sessions /setup /mcp /skills /memory /remember /providers /connect <name> /model <id> /mode <code|plan|auto> /think /tasks /plan /hooks /rollback [turn] /update /version /clear /exit");
+        store.setNotice(helpText(customSkillCommands));
         break;
 
       default: {
@@ -674,7 +722,7 @@ export function startTui(options: TuiOptions): void {
 }
 
 import { formatToolBadge } from "./utils/toolSummary.js";
-import type { ViewMessage } from "./store.js";
+import { TOOL_OUTPUT_KEEP, type ViewMessage } from "./store.js";
 
 /** Convert stored LLM messages into view rows for session resume. */
 function toViewMessages(messages: LLMMessage[]): ViewMessage[] {
@@ -701,6 +749,7 @@ function toViewMessages(messages: LLMMessage[]): ViewMessage[] {
               input: callInfo?.input,
               badgeTitle: badge.title,
               badgeDetail: badge.detail,
+              output: c.content.slice(0, TOOL_OUTPUT_KEEP),
             },
           });
         }
@@ -717,4 +766,20 @@ function toViewMessages(messages: LLMMessage[]): ViewMessage[] {
     }
   }
   return rows;
+}
+
+/** The /help panel: every command with its arguments, then key bindings. */
+function helpText(skills: CommandItem[]): string {
+  const all = [...COMMANDS, ...skills, { name: "/hooks", description: "List configured tool hooks" }];
+  const label = (c: CommandItem) => `${c.name}${c.args ? ` ${c.args}` : ""}`;
+  const width = Math.min(34, Math.max(...all.map((c) => label(c).length)) + 2);
+  const commands = all.map((c) => `${label(c).padEnd(width)}${c.description}`);
+  const keys = [
+    "Enter send · \\+Enter or Shift/Alt+Enter newline · Tab cycle mode (empty input)",
+    "←/→ move · Ctrl+←/→ word · Home/End line · Ctrl+A/E line start/end",
+    "Ctrl+W delete word · Ctrl+U/K delete to line start/end · ↑/↓ history",
+    "Esc Esc clear draft · Ctrl+O show last tool output · PgUp/PgDn scroll",
+    "Ctrl+C interrupt (twice to exit) · type while the agent works to queue a follow-up",
+  ];
+  return ["Commands", ...commands, "", "Keys", ...keys].join("\n");
 }

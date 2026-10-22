@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert";
-import { inputBoxRows, permissionPromptRows, taskPanelRows, textRows } from "./layout.js";
+import { inputBoxRows, noticeRows, permissionPromptRows, taskPanelRows, textRows } from "./layout.js";
 import { popUserTurns } from "./history.js";
 import { printableInput } from "../components/InputBox.js";
 import type { AgentTask } from "../../tools/tasks.js";
@@ -19,8 +19,10 @@ describe("Layout heights (layout.ts)", () => {
   it("sizes the input box from the live draft, folding long drafts", () => {
     assert.strictEqual(inputBoxRows("", 80, null, 0), 3);
     assert.strictEqual(inputBoxRows("a\nb\nc", 80, null, 0), 5);
-    // 10 lines fold into first two + pill + last
-    assert.strictEqual(inputBoxRows(Array(10).fill("x").join("\n"), 80, null, 0), 6);
+    // 10 lines fold into a 4-line window around the cursor + a summary row
+    assert.strictEqual(inputBoxRows(Array(10).fill("x").join("\n"), 80, null, 0, { cursorLine: 5 }), 4 + 1 + 2);
+    // queued / Esc hint row under the box
+    assert.strictEqual(inputBoxRows("", 80, null, 0, { hintRow: true }), 4);
     // a single long line wraps
     assert.ok(inputBoxRows("x ".repeat(100), 40, null, 0) > 3);
     // palettes sit above the box
@@ -31,6 +33,9 @@ describe("Layout heights (layout.ts)", () => {
   it("sizes the permission prompt from its diff or command", () => {
     const plain = permissionPromptRows({ toolName: "web_fetch", argsPreview: "https://x" }, 100);
     assert.strictEqual(plain, 4);
+    // the risk label shares the header row while it fits
+    assert.strictEqual(permissionPromptRows({ toolName: "web_fetch", argsPreview: "https://x", tier: 3 }, 120), 4);
+    assert.ok(permissionPromptRows({ toolName: "web_fetch", argsPreview: "https://x", tier: 3 }, 40) > 4);
     const write = permissionPromptRows(
       { toolName: "write_file", input: { path: "new-file-for-layout-test.txt", content: "1\n2\n3" } },
       100,
@@ -81,5 +86,14 @@ describe("Conversation rollback (history.ts)", () => {
     const history = [user("one"), assistant("a1")];
     assert.strictEqual(popUserTurns(history, 5), "one");
     assert.deepStrictEqual(history, []);
+  });
+});
+
+describe("Notice heights (layout.ts)", () => {
+  it("sizes notices: one wrapped line, or a bordered panel for multi-line text", () => {
+    assert.strictEqual(noticeRows(null, 80), 0);
+    assert.strictEqual(noticeRows("Saved.", 80), 1);
+    // border (2) + 3 lines + "Esc to close" (1)
+    assert.strictEqual(noticeRows("a\nb\nc", 80), 6);
   });
 });

@@ -1,6 +1,6 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { Box, Text, useInput } from "ink";
-import { searchSessions, type StoredSession } from "../../sessions.js";
+import { filterSessions, listSessions } from "../../sessions.js";
 
 function relTime(ts: number): string {
   const diff = Date.now() - ts;
@@ -17,7 +17,9 @@ export function SessionPicker({ onPick }: { onPick(id: string | null): void }) {
   const [query, setQuery] = useState("");
   const [idx, setIdx] = useState(0);
 
-  const filteredSessions = searchSessions(query);
+  // Read the session files once per picker; filtering happens in memory.
+  const allSessions = useMemo(() => listSessions(), []);
+  const filteredSessions = useMemo(() => filterSessions(allSessions, query), [allSessions, query]);
 
   useInput((input, key) => {
     if (key.escape) {

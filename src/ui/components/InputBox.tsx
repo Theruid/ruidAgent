@@ -1,9 +1,11 @@
 import React, { useState, useRef, useMemo, useEffect } from "react";
-import { Box, Text, useInput } from "ink";
+import { Box, Text, useInput, useStdin } from "ink";
 import { CommandPalette, COMMANDS, type CommandItem } from "./CommandPalette.js";
 import { FilePalette } from "./FilePalette.js";
 import { listWorkspaceFiles, searchFiles } from "../utils/fileSearch.js";
 import { inputBoxRows } from "../utils/layout.js";
+import * as ed from "../utils/lineEditor.js";
+import { truncateLine } from "../utils/wrap.js";
 
 /**
  * Turns a raw input chunk into text to insert. Pastes arrive as one chunk;
@@ -18,6 +20,11 @@ export function printableInput(input: string): string {
     : normalized.replace(/[\r\n\x00-\x08\x0b-\x1f\x7f]/g, "");
 }
 
+/** How long a first Esc stays armed before a second press clears the draft. */
+const ESC_CONFIRM_MS = 1500;
+/** Forward-Delete's escape sequence; Ink reports it and Backspace both as `delete`. */
+const FORWARD_DELETE_SEQUENCES = new Set(["\x1b[3~", "\x1b[3$", "\x1b[3^"]);
+
 export interface InputBoxProps {
   onSubmit(line: string): void;
   disabled: boolean;
@@ -30,6 +37,12 @@ export interface InputBoxProps {
   columns?: number;
   /** Receives the rendered height (palette included) whenever it changes. */
   onHeightChange?(rows: number): void;
+  /** Told whether the draft is empty, so global keys (Esc, Home/End) know whether they belong to the input. */
+  onDraftEmptyChange?(empty: boolean): void;
+  /** Prompts waiting to be sent after the current turn. */
+  queued?: string[];
+  /** Takes the queue back for editing (Esc on an empty draft); returns its text. */
+  onRestoreQueue?(): string | null;
   onCycleMode?(): void;
   onScrollUp?(): void;
   onScrollDown?(): void;
@@ -45,26 +58,56 @@ export function InputBox({
   history: historyProp,
   columns = 80,
   onHeightChange,
+  onDraftEmptyChange,
+  queued = [],
+  onRestoreQueue,
   onCycleMode,
   onScrollUp,
   onScrollDown,
   onScrollToBottom,
 }: InputBoxProps) {
-  const [value, setValue] = useState(initialValue ?? "");
+  const [editor, setEditor] = useState<ed.EditorState>(() => ed.fromText(initialValue ?? ""));
   const [selectedCmdIdx, setSelectedCmdIdx] = useState(0);
   const [selectedFileIdx, setSelectedFileIdx] = useState(0);
-  const [showPalette, setShowPalette] = useState(false);
+  const [paletteDismissed, setPaletteDismissed] = useState(false);
+  const [escArmedAt, setEscArmedAt] = useState(0);
   // The caller's array is stable (it lives on the store), so remounting after
   // a picker keeps the prompt history.
   const history = useRef<string[]>(historyProp ?? []);
   const histIdx = useRef(-1);
   const draft = useRef("");
+  const value = editor.value;
+
+  // Remember the raw sequence of the latest keypress. Registered once, so it
+  // runs before useInput's handler (which re-subscribes on every render).
+  const { internal_eventEmitter } = useStdin();
+  const lastRaw = useRef("");
+  useEffect(() => {
+    const onRaw = (data: string) => {
+      lastRaw.current = data;
+    };
+    internal_eventEmitter?.on("input", onRaw);
+    return () => {
+      internal_eventEmitter?.removeListener("input", onRaw);
+    };
+  }, [internal_eventEmitter]);
 
   useEffect(() => {
     if (initialValue !== undefined) {
-      setValue(initialValue);
+      setEditor(ed.fromText(initialValue));
     }
   }, [initialValue]);
+
+  useEffect(() => {
+    onDraftEmptyChange?.(value.length === 0);
+  }, [value.length === 0, onDraftEmptyChange]);
+
+  // A first Esc arms "clear"; let it lapse visibly.
+  useEffect(() => {
+    if (!escArmedAt) return;
+    const t = setTimeout(() => setEscArmedAt(0), ESC_CONFIRM_MS);
+    return () => clearTimeout(t);
+  }, [escArmedAt]);
 
   // Cached workspace files
   const workspaceFiles = useMemo(() => {
@@ -77,8 +120,8 @@ export function InputBox({
 
   const allCommands = useMemo(() => [...COMMANDS, ...customCommands], [customCommands]);
 
-  // Determine if slash command palette should be shown
-  const isSlashCmd = value.startsWith("/") && !value.includes(" ");
+  // Slash command palette: the whole draft is a single "/word"
+  const isSlashCmd = value.startsWith("/") && !value.includes(" ") && !value.includes("\n");
   const matchingCmds = isSlashCmd
     ? allCommands.filter((cmd) => {
         const q = value.toLowerCase();
@@ -89,63 +132,71 @@ export function InputBox({
         );
       })
     : [];
+  const shouldShowCmdPalette = isSlashCmd && matchingCmds.length > 0 && !paletteDismissed;
 
-  const shouldShowCmdPalette = isSlashCmd && matchingCmds.length > 0 && !showPalette;
-
-  // Determine if @ file palette should be shown
-  // Matches '@query' at end of text or preceded by space
-  const atMatch = value.match(/(?:^|\s)@([^\s]*)$/);
+  // @ file palette: an "@query" word ending at the cursor
+  const beforeCursor = value.slice(0, editor.cursor);
+  const atMatch = beforeCursor.match(/(?:^|\s)@([^\s]*)$/);
   const atQuery = atMatch ? atMatch[1] : null;
   const matchingFiles = atQuery !== null ? searchFiles(workspaceFiles, atQuery) : [];
-  const shouldShowFilePalette = atQuery !== null && !showPalette;
+  const shouldShowFilePalette = atQuery !== null && !paletteDismissed;
 
+  const escArmed = escArmedAt > 0;
+  const hintRow = escArmed || queued.length > 0;
+  const { line: cursorLine } = ed.cursorPosition(editor);
   const height = inputBoxRows(
     value,
     columns,
     shouldShowCmdPalette ? "command" : shouldShowFilePalette ? "file" : null,
     shouldShowCmdPalette ? matchingCmds.length : matchingFiles.length,
+    { cursorLine, hintRow },
   );
   useEffect(() => {
     onHeightChange?.(height);
   }, [height, onHeightChange]);
 
+  /** Applies an edit and resets per-keystroke UI state. */
+  const apply = (next: ed.EditorState) => {
+    setEditor(next);
+    setSelectedCmdIdx(0);
+    setSelectedFileIdx(0);
+    setEscArmedAt(0);
+    if (next.value !== value) setPaletteDismissed(false);
+  };
+
+  /** Replaces the "@query" before the cursor with the chosen file. */
+  const completeFile = (file: string) => {
+    const replaced = beforeCursor.replace(/(?:^|\s)@([^\s]*)$/, (m) => (/^\s/.test(m) ? `${m[0]}@${file} ` : `@${file} `));
+    apply({ value: replaced + value.slice(editor.cursor), cursor: replaced.length });
+  };
+
+  const recall = (text: string) => apply(ed.fromText(text));
+
   useInput(
     (input, key) => {
-      // 1. PageUp/PageDown, Home/End and Ctrl+arrows scroll the transcript;
-      // App handles them globally (Ink delivers keys to every handler).
-      if (key.pageUp || key.pageDown || key.home || key.end) return;
+      // PageUp/PageDown, Ctrl+arrows (and Home/End on an empty draft) scroll
+      // the transcript; App handles them (Ink delivers keys to every handler).
+      if (key.pageUp || key.pageDown) return;
       if (key.ctrl && (key.upArrow || key.downArrow)) return;
+      if ((key.home || key.end) && !value) return;
 
-      // 2. Tab key: autocomplete slash command, file mention, OR cycle modes
+      // Tab: autocomplete slash command / file mention, or cycle modes
       if (key.tab) {
         if (shouldShowFilePalette && matchingFiles.length > 0) {
           const target = matchingFiles[Math.min(selectedFileIdx, matchingFiles.length - 1)];
-          if (target) {
-            const updated = value.replace(/(?:^|\s)@([^\s]*)$/, (m) => m.startsWith(" ") ? ` @${target} ` : `@${target} `);
-            setValue(updated);
-            setSelectedFileIdx(0);
-          }
+          if (target) completeFile(target);
           return;
         }
-
         if (shouldShowCmdPalette) {
           const target = matchingCmds[Math.min(selectedCmdIdx, matchingCmds.length - 1)];
-          if (target) {
-            const completed = target.args ? `${target.name} ` : target.name;
-            setValue(completed);
-            setSelectedCmdIdx(0);
-          }
+          if (target) recall(target.args ? `${target.name} ` : target.name);
           return;
         }
-
-        // Empty input or non-slash command: cycle through modes!
-        if (!value.trim()) {
-          onCycleMode?.();
-          return;
-        }
+        if (!value.trim()) onCycleMode?.();
+        return;
       }
 
-      // 3. Navigation inside palettes (File or Command)
+      // Navigation inside palettes
       if (shouldShowFilePalette && matchingFiles.length > 0) {
         if (key.upArrow) {
           setSelectedFileIdx((prev) => (prev > 0 ? prev - 1 : matchingFiles.length - 1));
@@ -153,10 +204,6 @@ export function InputBox({
         }
         if (key.downArrow) {
           setSelectedFileIdx((prev) => (prev < matchingFiles.length - 1 ? prev + 1 : 0));
-          return;
-        }
-        if (key.escape) {
-          setShowPalette(true);
           return;
         }
       } else if (shouldShowCmdPalette) {
@@ -168,170 +215,178 @@ export function InputBox({
           setSelectedCmdIdx((prev) => (prev < matchingCmds.length - 1 ? prev + 1 : 0));
           return;
         }
-        if (key.escape) {
-          setShowPalette(true);
-          return;
-        }
       }
 
-      // 4. Enter / Newline key handling (Enter, Ctrl+Enter, Shift+Enter, Alt+Enter, Ctrl+J)
+      // Esc: close a palette, else clear the draft on a second press, else
+      // take queued prompts back for editing.
+      if (key.escape) {
+        if ((shouldShowCmdPalette || shouldShowFilePalette) && !paletteDismissed) {
+          setPaletteDismissed(true);
+          return;
+        }
+        if (value) {
+          if (escArmed) {
+            apply(ed.emptyEditor);
+            histIdx.current = -1;
+          } else {
+            setEscArmedAt(Date.now());
+          }
+          return;
+        }
+        const restored = onRestoreQueue?.();
+        if (restored) recall(restored);
+        return;
+      }
+
+      // Enter / newline (Shift/Alt/Ctrl+Enter, Ctrl+J, or a trailing backslash)
       const isReturnKey =
         key.return ||
         input === "\n" ||
         input === "\r" ||
         input === "\r\n" ||
-        input === "\x0a" ||
         (key.ctrl && (input === "j" || input === "\n"));
 
       if (isReturnKey) {
-        // Multi-line newline trigger
-        const isMultiLine =
-          key.shift ||
-          key.meta ||
-          key.ctrl ||
-          input === "\n" ||
-          input === "\x0a" ||
-          (key.ctrl && input === "j") ||
-          value.endsWith("\\");
-
+        const backslashBefore = beforeCursor.endsWith("\\");
+        const isMultiLine = key.shift || key.meta || key.ctrl || input === "\n" || backslashBefore;
         if (isMultiLine) {
-          // If ended with \, strip the backslash and add a single newline
-          setValue((v) => (v.endsWith("\\") ? v.slice(0, -1) + "\n" : v + "\n"));
+          apply(ed.insert(backslashBefore ? ed.backspace(editor) : editor, "\n"));
           return;
         }
 
-        // Selecting file from palette on Enter
         if (shouldShowFilePalette && matchingFiles.length > 0) {
           const target = matchingFiles[Math.min(selectedFileIdx, matchingFiles.length - 1)];
           if (target) {
-            const updated = value.replace(/(?:^|\s)@([^\s]*)$/, (m) => m.startsWith(" ") ? ` @${target} ` : `@${target} `);
-            setValue(updated);
-            setSelectedFileIdx(0);
+            completeFile(target);
             return;
           }
         }
 
-        // Selecting slash command from palette on Enter
         if (shouldShowCmdPalette && !matchingCmds.some((c) => c.name === value.trim())) {
           const target = matchingCmds[Math.min(selectedCmdIdx, matchingCmds.length - 1)];
           if (target && !target.args) {
-            const cmdName = target.name;
-            setValue("");
-            setSelectedCmdIdx(0);
-            onSubmit(cmdName);
+            apply(ed.emptyEditor);
+            onSubmit(target.name);
             onScrollToBottom?.();
             return;
           } else if (target && target.args) {
-            setValue(`${target.name} `);
-            setSelectedCmdIdx(0);
+            recall(`${target.name} `);
             return;
           }
         }
 
         const line = value.trim();
         if (!line) return;
-        history.current.push(line);
+        if (history.current.at(-1) !== line) history.current.push(line);
         histIdx.current = -1;
-        setValue("");
-        setSelectedCmdIdx(0);
-        setSelectedFileIdx(0);
-        setShowPalette(false);
+        apply(ed.emptyEditor);
         onSubmit(line);
         onScrollToBottom?.();
         return;
       }
 
-      // 5. Up/Down Arrow handling when NOT in palette
+      // Up/Down: move between lines of a multi-line draft, then history, then scroll
       if (key.upArrow) {
-        if (value !== "" || (history.current.length > 0 && histIdx.current !== -1)) {
-          if (history.current.length === 0) return;
+        const moved = ed.lineUp(editor);
+        if (moved) {
+          setEditor(moved);
+          return;
+        }
+        if (history.current.length > 0 && (value !== "" || histIdx.current !== -1)) {
           if (histIdx.current === -1) {
             draft.current = value;
             histIdx.current = history.current.length - 1;
           } else if (histIdx.current > 0) {
             histIdx.current -= 1;
           }
-          setValue(history.current[histIdx.current]);
+          recall(history.current[histIdx.current]);
           return;
         }
-
-        if (value === "") {
-          onScrollUp?.();
-          return;
-        }
+        if (value === "") onScrollUp?.();
+        return;
       }
-
       if (key.downArrow) {
+        const moved = ed.lineDown(editor);
+        if (moved) {
+          setEditor(moved);
+          return;
+        }
         if (histIdx.current !== -1) {
           histIdx.current += 1;
           if (histIdx.current >= history.current.length) {
             histIdx.current = -1;
-            setValue(draft.current);
+            recall(draft.current);
           } else {
-            setValue(history.current[histIdx.current]);
+            recall(history.current[histIdx.current]);
           }
           return;
         }
-
-        if (value === "") {
-          onScrollDown?.();
-          return;
-        }
+        if (value === "") onScrollDown?.();
+        return;
       }
 
-      // 6. Backspace / Delete
+      // Cursor movement
+      const wordMod = key.ctrl || key.meta;
+      if (key.leftArrow) return setEditor(wordMod ? ed.wordLeft(editor) : ed.left(editor));
+      if (key.rightArrow) return setEditor(wordMod ? ed.wordRight(editor) : ed.right(editor));
+      if (key.home) return setEditor(ed.lineStart(editor));
+      if (key.end) return setEditor(ed.lineEnd(editor));
+
+      // Deletion. Ink names Backspace "delete" on most terminals, so the raw
+      // sequence tells forward-Delete apart.
       if (key.backspace || key.delete) {
-        setValue((v) => {
-          const next = v.slice(0, -1);
-          if (!next.startsWith("/") && !next.includes("@")) setShowPalette(false);
-          return next;
-        });
-        setSelectedCmdIdx(0);
-        setSelectedFileIdx(0);
-        return;
-      }
-
-      // 7. Escape
-      if (key.escape) {
-        if (value) {
-          setValue("");
-          setShowPalette(false);
-          setSelectedCmdIdx(0);
-          setSelectedFileIdx(0);
+        if (key.delete && FORWARD_DELETE_SEQUENCES.has(lastRaw.current)) {
+          apply(ed.deleteForward(editor));
+        } else {
+          apply(key.meta || key.ctrl ? ed.deleteWordBack(editor) : ed.backspace(editor));
         }
         return;
       }
 
-      // Ignore other control/escape codes
-      if (key.ctrl || key.meta) return;
+      // Emacs-style editing keys
+      if (key.ctrl) {
+        switch (input) {
+          case "a":
+            return setEditor(ed.lineStart(editor));
+          case "e":
+            return setEditor(ed.lineEnd(editor));
+          case "w":
+            return apply(ed.deleteWordBack(editor));
+          case "u":
+            return apply(ed.killToLineStart(editor));
+          case "k":
+            return apply(ed.killToLineEnd(editor));
+          case "b":
+            return setEditor(ed.left(editor));
+          case "f":
+            return setEditor(ed.right(editor));
+        }
+        return;
+      }
+      if (key.meta) {
+        if (input === "b") return setEditor(ed.wordLeft(editor));
+        if (input === "f") return setEditor(ed.wordRight(editor));
+        return;
+      }
 
       const printable = printableInput(input);
       if (!printable) return;
-
-      // Regular text entry
+      if (histIdx.current !== -1) histIdx.current = -1;
       onScrollToBottom?.();
-      setValue((v) => {
-        const next = v + printable;
-        if (next.startsWith("/") || next.includes("@")) setShowPalette(false);
-        return next;
-      });
-      setSelectedCmdIdx(0);
-      setSelectedFileIdx(0);
+      apply(ed.insert(editor, printable));
     },
     { isActive: !disabled },
   );
 
   const lines = value ? value.split("\n") : [];
-  const isFolded = lines.length > 6;
-  const foldedHidden = isFolded ? lines.length - 3 : 0;
-
-  // When folded, show first 2 lines, a fold pill, and last line
-  const displayLines = isFolded
-    ? [...lines.slice(0, 2), null, lines[lines.length - 1]]
-    : lines;
+  const { start, end } = ed.foldWindow(lines.length, cursorLine);
+  const hiddenAbove = start;
+  const hiddenBelow = lines.length - end;
+  const cursorCol = editor.cursor - (beforeCursor.lastIndexOf("\n") + 1);
+  const showCursor = !disabled;
 
   return (
-    <Box flexDirection="column" marginTop={disabled ? 0 : undefined}>
+    <Box flexDirection="column">
       {shouldShowCmdPalette && (
         <CommandPalette query={value} selectedIndex={selectedCmdIdx} customCommands={customCommands} />
       )}
@@ -342,37 +397,67 @@ export function InputBox({
         borderStyle="round"
         paddingX={1}
         flexDirection="column"
-        borderColor={shouldShowCmdPalette ? "cyan" : shouldShowFilePalette ? "yellow" : undefined}
+        borderColor={shouldShowCmdPalette ? "cyan" : shouldShowFilePalette ? "yellow" : escArmed ? "red" : undefined}
       >
-        {displayLines.length === 0 ? (
+        {lines.length === 0 ? (
           <Box>
-            <Text dimColor>{"> "} </Text>
-            <Text dimColor>{placeholder}</Text>
+            <Text dimColor>{"> "}</Text>
+            {showCursor && <Text inverse> </Text>}
+            <Text dimColor>{showCursor ? " " : ""}{placeholder}</Text>
           </Box>
         ) : (
-          displayLines.map((line, idx) => {
-            // Fold pill
-            if (line === null) {
+          <>
+            {lines.slice(start, end).map((line, i) => {
+              const idx = start + i;
+              const prefix = idx === 0 ? "> " : "… ";
+              if (idx !== cursorLine || !showCursor) {
+                return (
+                  <Box key={idx}>
+                    <Text dimColor>{prefix}</Text>
+                    <Text wrap="wrap">{line || " "}</Text>
+                  </Box>
+                );
+              }
+              const chars = Array.from(line);
+              const col = Array.from(line.slice(0, cursorCol)).length;
               return (
-                <Box key="fold-pill">
-                  <Text dimColor>  </Text>
-                  <Text color="cyan">… [{foldedHidden} lines hidden · Enter to send · Esc to clear] …</Text>
+                <Box key={idx}>
+                  <Text dimColor>{prefix}</Text>
+                  <Text wrap="wrap">
+                    {chars.slice(0, col).join("")}
+                    <Text inverse>{chars[col] ?? " "}</Text>
+                    {chars.slice(col + 1).join("")}
+                  </Text>
                 </Box>
               );
-            }
-
-            const isLast = idx === displayLines.length - 1;
-            const prefix = idx === 0 ? "> " : "… ";
-            return (
-              <Box key={idx}>
-                <Text dimColor>{prefix}</Text>
-                <Text wrap="wrap">{line || " "}</Text>
-                {isLast && <Text dimColor>▌</Text>}
+            })}
+            {(hiddenAbove > 0 || hiddenBelow > 0) && (
+              <Box key="fold-pill">
+                <Text color="cyan">
+                  {"  "}… {[hiddenAbove > 0 ? `${hiddenAbove} above` : "", hiddenBelow > 0 ? `${hiddenBelow} below` : ""]
+                    .filter(Boolean)
+                    .join(" · ")}{" "}
+                  · {lines.length} lines · ↑↓ move · Enter send
+                </Text>
               </Box>
-            );
-          })
+            )}
+          </>
         )}
       </Box>
+      {hintRow && (
+        <Box paddingLeft={1}>
+          {escArmed ? (
+            <Text color="red">Press Esc again to clear the draft</Text>
+          ) : (
+            <Text color="yellow">
+              {truncateLine(
+                `⏳ ${queued.length} queued: ${queued[0].replace(/\s+/g, " ")}${queued.length > 1 ? ` (+${queued.length - 1})` : ""} · Esc on empty input to edit`,
+                Math.max(20, columns - 4),
+              )}
+            </Text>
+          )}
+        </Box>
+      )}
     </Box>
   );
 }

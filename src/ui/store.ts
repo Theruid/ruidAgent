@@ -15,7 +15,14 @@ export interface ToolMeta {
   badgeTitle?: string;
   badgeDetail?: string;
   durationMs?: number;
+  /** Tool output kept for Ctrl+O expansion (capped). */
+  output?: string;
 }
+
+/** Characters of tool output kept per row for the Ctrl+O view. */
+export const TOOL_OUTPUT_KEEP = 8000;
+/** Single-line notices clear themselves after this long. */
+export const NOTICE_TTL_MS = 6000;
 
 export interface TurnReceipt {
   filesChanged: number;
@@ -54,6 +61,8 @@ export interface PendingPermission {
   toolName: string;
   input?: unknown;
   argsPreview?: string;
+  /** Risk tier 0-4 from the permission classifier. */
+  tier?: number;
 }
 
 export interface SessionUsage {
@@ -94,6 +103,12 @@ export interface UIState {
   activeAction: ActiveAction | null;
   /** When the current turn started (ms epoch), 0 while idle. */
   turnStartedAt: number;
+  /** Prompts typed while a turn was running, sent in order once it ends. */
+  queuedPrompts: string[];
+  /** Tool row whose full output is shown (Ctrl+O), or null. */
+  expandedToolId: number | null;
+  /** Finished task lists are hidden once the next turn starts. */
+  taskPanelHidden: boolean;
 }
 
 // Framework-free store so non-React code (agent loop callbacks) can push
@@ -132,6 +147,12 @@ export class AgentUIStore {
   private maxScroll = Number.POSITIVE_INFINITY;
   /** Submitted prompts, oldest first. Lives here so it survives InputBox remounts. */
   readonly promptHistory: string[] = [];
+  /** Whether the input draft is empty — decides who owns Esc/Home/End. */
+  inputEmpty = true;
+  setInputEmpty = (empty: boolean): void => {
+    this.inputEmpty = empty;
+  };
+  private noticeTimer: ReturnType<typeof setTimeout> | null = null;
   private turnStartedAt = 0;
   private turnCostBefore = 0;
   /** Tool names invoked during this turn, in first-call order (deduped). */
@@ -180,6 +201,9 @@ export class AgentUIStore {
       memoryCount: 0,
       activeAction: null,
       turnStartedAt: 0,
+      queuedPrompts: [],
+      expandedToolId: null,
+      taskPanelHidden: false,
     };
   }
 
@@ -239,7 +263,42 @@ export class AgentUIStore {
   }
 
   setTasks(tasks: AgentTask[]): void {
-    this.set({ tasks }, true);
+    this.set({ tasks, taskPanelHidden: false }, true);
+  }
+
+  // ---- queued prompts (typed while a turn runs) ----
+
+  enqueuePrompt(text: string): void {
+    this.set({ queuedPrompts: [...this.state.queuedPrompts, text] }, true);
+  }
+
+  /** Removes and returns the next queued prompt. */
+  dequeuePrompt(): string | undefined {
+    const [next, ...rest] = this.state.queuedPrompts;
+    if (next !== undefined) this.set({ queuedPrompts: rest }, true);
+    return next;
+  }
+
+  /** Empties the queue and returns its prompts joined for editing, or null when empty. */
+  takeQueue = (): string | null => {
+    const q = this.state.queuedPrompts;
+    if (q.length === 0) return null;
+    this.set({ queuedPrompts: [] }, true);
+    return q.join("\n\n");
+  };
+
+  // ---- tool output expansion ----
+
+  /** Toggles the full output of the most recent finished tool row (Ctrl+O). */
+  toggleLatestToolOutput(): boolean {
+    if (this.state.expandedToolId !== null) {
+      this.set({ expandedToolId: null }, true);
+      return false;
+    }
+    const latest = [...this.state.messages].reverse().find((m) => m.kind === "tool" && !m.pending);
+    if (!latest) return false;
+    this.set({ expandedToolId: latest.id }, true);
+    return true;
   }
 
   setMcpServerCount(count: number): void {
@@ -299,8 +358,25 @@ export class AgentUIStore {
     return next;
   }
 
-  setNotice(notice: string | null): void {
+  /**
+   * Shows a notice under the transcript. Short single-line notices clear
+   * themselves after NOTICE_TTL_MS; multi-line ones render as a panel that
+   * stays until Esc or the next action. Errors (`sticky`) always stay.
+   */
+  setNotice(notice: string | null, opts: { sticky?: boolean } = {}): void {
+    if (this.noticeTimer) {
+      clearTimeout(this.noticeTimer);
+      this.noticeTimer = null;
+    }
     this.set({ notice }, true);
+    const transient = notice !== null && !opts.sticky && !notice.includes("\n") && !/^error/i.test(notice);
+    if (transient) {
+      this.noticeTimer = setTimeout(() => {
+        this.noticeTimer = null;
+        if (this.state.notice === notice) this.set({ notice: null }, true);
+      }, NOTICE_TTL_MS);
+      this.noticeTimer.unref?.();
+    }
   }
 
   setPhase(phase: Phase): void {
@@ -312,6 +388,17 @@ export class AgentUIStore {
     this.thoughtStartTime = null;
     this.thoughtDurationMs = null;
     this.set({
+      // A new conversation starts its token and cost counters from zero.
+      sessionUsage: {
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheCreationInputTokens: 0,
+        cacheReadInputTokens: 0,
+        totalCost: 0,
+        contextTokens: 0,
+      },
+      lastTurnDurationMs: 0,
+      expandedToolId: null,
       messages: [],
       streamingText: "",
       streamingThought: "",
@@ -337,6 +424,7 @@ export class AgentUIStore {
         scrollOffset: 0,
         activeAction: null,
         turnStartedAt: 0,
+        expandedToolId: null,
       },
       true,
     );
@@ -364,6 +452,11 @@ export class AgentUIStore {
       scrollOffset: 0,
       activeAction: { name: "Preparing context", startedAt: this.turnStartedAt },
       turnStartedAt: this.turnStartedAt,
+      // A plan that finished last turn no longer needs the screen space.
+      taskPanelHidden:
+        this.state.tasks.length > 0 && this.state.tasks.every((t) => t.status === "completed")
+          ? true
+          : this.state.taskPanelHidden,
     }, true);
   }
 
@@ -504,6 +597,7 @@ export class AgentUIStore {
               badgeTitle: badge.title,
               badgeDetail: badge.detail,
               durationMs,
+              output: e.content.length > TOOL_OUTPUT_KEEP ? e.content.slice(0, TOOL_OUTPUT_KEEP) : e.content,
             },
           };
         }
@@ -535,7 +629,7 @@ export class AgentUIStore {
           }
         }
         this.set({
-          pendingPermission: { toolName: e.name, input: e.input, argsPreview },
+          pendingPermission: { toolName: e.name, input: e.input, argsPreview, tier: e.tier },
           activeAction: { name: "Awaiting your approval", detail: e.name, startedAt: Date.now() },
         }, true);
         break;
@@ -574,7 +668,7 @@ export class AgentUIStore {
       }
 
       case "tasks_updated":
-        this.set({ tasks: e.tasks }, true);
+        this.set({ tasks: e.tasks, taskPanelHidden: false }, true);
         break;
 
       case "iteration": {

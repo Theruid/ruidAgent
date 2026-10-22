@@ -54,7 +54,7 @@ export type LoopEvent =
   | { type: "thought_delta"; text: string }
   | { type: "tool_start"; name: string; input?: unknown; toolCallId?: string }
   | { type: "tool_result"; name: string; content: string; isError: boolean; toolCallId?: string }
-  | { type: "permission_request"; name: string; input?: unknown; toolCallId?: string }
+  | { type: "permission_request"; name: string; input?: unknown; toolCallId?: string; tier?: number }
   | { type: "permission_denied"; name: string; toolCallId?: string }
   | {
       type: "usage";
@@ -359,7 +359,13 @@ export async function runAgentLoop(options: LoopOptions): Promise<LLMMessage[]> 
       // Only surface a prompt when the user will actually be asked; calls the
       // manager decides on its own would otherwise flash the approval UI.
       if (permissions.wouldPrompt?.(call.name, call.input) ?? true) {
-        options.onEvent?.({ type: "permission_request", name: call.name, input: call.input, toolCallId: call.id });
+        options.onEvent?.({
+          type: "permission_request",
+          name: call.name,
+          input: call.input,
+          toolCallId: call.id,
+          tier: permissions.classifyRisk?.(call.name, call.input),
+        });
       }
       // An approval prompt must not outlive an aborted turn.
       approvals.push(await unlessAborted(permissions.check(call.name, call.input), options.signal));

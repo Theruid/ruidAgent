@@ -1,29 +1,62 @@
-import React, { useEffect, useState } from "react";
+import React, { useSyncExternalStore } from "react";
 import { Box, Text } from "ink";
 import { formatDuration } from "../utils/pricing.js";
 import { truncateLine } from "../utils/wrap.js";
 
 export const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
+/** Animation period. Every spinner shares it, so a tick costs one frame, not one per spinner. */
+export const TICK_MS = 120;
+
+/**
+ * One process-wide animation clock. Each spinner owning its own setInterval
+ * meant N spinners caused N redraws per period — on Windows consoles every
+ * redraw is visible — so they all subscribe to this single ticker instead.
+ * The interval only runs while something is subscribed.
+ */
+const ticker = (() => {
+  let tick = 0;
+  let timer: ReturnType<typeof setInterval> | null = null;
+  const listeners = new Set<() => void>();
+  return {
+    subscribe(fn: () => void): () => void {
+      listeners.add(fn);
+      if (!timer) {
+        timer = setInterval(() => {
+          tick++;
+          for (const l of listeners) l();
+        }, TICK_MS);
+      }
+      return () => {
+        listeners.delete(fn);
+        if (listeners.size === 0 && timer) {
+          clearInterval(timer);
+          timer = null;
+        }
+      };
+    },
+    get: () => tick,
+  };
+})();
+
+/** Current animation frame number; re-renders the caller on each shared tick. */
+export function useTick(): number {
+  return useSyncExternalStore(ticker.subscribe, ticker.get);
+}
+
 /** Standalone animated spinner glyph — used for in-transcript pending rows. */
 export function Spinner({ color = "cyan" }: { color?: string }) {
-  const [frame, setFrame] = useState(0);
-
-  useEffect(() => {
-    const timer = setInterval(() => setFrame((f) => f + 1), 90);
-    return () => clearInterval(timer);
-  }, []);
-
+  const frame = useTick();
   return <Text color={color}>{SPINNER_FRAMES[frame % SPINNER_FRAMES.length]}</Text>;
 }
 
 /**
  * Live "the agent is working" row.
  *
- * It owns its own animation timer, so the spinner and elapsed counter keep
- * moving even when no store event arrives (e.g. while waiting for the model's
- * first token). Because the interval lives here, only this row re-renders —
- * the message list behind it stays untouched.
+ * Driven by the shared ticker, so the spinner and elapsed counter keep moving
+ * even when no store event arrives (e.g. while waiting for the model's first
+ * token), and only this row re-renders — the message list behind it stays
+ * untouched.
  */
 export function ActivityIndicator({
   label,
@@ -42,16 +75,8 @@ export function ActivityIndicator({
   /** True while blocked on a permission prompt: spinner freezes. */
   paused?: boolean;
 }) {
-  const [frame, setFrame] = useState(0);
-  const [now, setNow] = useState(() => Date.now());
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setFrame((f) => f + 1);
-      setNow(Date.now());
-    }, 90);
-    return () => clearInterval(timer);
-  }, []);
+  const frame = useTick();
+  const now = Date.now();
 
   const elapsed = Math.max(0, now - startedAt);
   const glyph = paused ? "⏸" : SPINNER_FRAMES[frame % SPINNER_FRAMES.length];

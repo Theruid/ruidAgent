@@ -2,6 +2,7 @@ import type { PendingPermission } from "../store.js";
 import type { AgentTask } from "../../tools/tasks.js";
 import { getToolDiff } from "./diff.js";
 import { wrapText } from "./wrap.js";
+import { foldWindow } from "./lineEditor.js";
 
 /**
  * Row heights of the panels stacked under the transcript. App subtracts them
@@ -16,26 +17,27 @@ export function textRows(text: string, width: number): number {
 }
 
 export const MAX_PALETTE_ROWS = 6;
-/** Input lines shown before the draft folds into first two + pill + last. */
-export const INPUT_FOLD_THRESHOLD = 6;
 
 export type PaletteKind = "command" | "file" | null;
 
 /**
- * Height of InputBox: optional palette above a bordered box.
- * `columns` is the full terminal width.
+ * Height of InputBox: optional palette above a bordered box, plus an
+ * optional hint row below it. `columns` is the full terminal width.
  */
-export function inputBoxRows(value: string, columns: number, palette: PaletteKind, paletteItems: number): number {
+export function inputBoxRows(
+  value: string,
+  columns: number,
+  palette: PaletteKind,
+  paletteItems: number,
+  opts: { cursorLine?: number; hintRow?: boolean } = {},
+): number {
   // App paddingX (2) + border (2) + paddingX (2) + "> " prefix (2) + cursor (1)
   const textWidth = Math.max(10, columns - 9);
   const lines = value ? value.split("\n") : [""];
-  let body: number;
-  if (lines.length > INPUT_FOLD_THRESHOLD) {
-    body = textRows(lines[0], textWidth) + textRows(lines[1], textWidth) + 1 + textRows(lines[lines.length - 1], textWidth);
-  } else {
-    body = lines.reduce((sum, l) => sum + textRows(l || " ", textWidth), 0);
-  }
-  let rows = body + 2;
+  const { start, end } = foldWindow(lines.length, opts.cursorLine ?? lines.length - 1);
+  let body = lines.slice(start, end).reduce((sum, l) => sum + textRows(l || " ", textWidth), 0);
+  if (end - start < lines.length) body += 1; // fold summary row
+  let rows = body + 2 + (opts.hintRow ? 1 : 0);
   if (palette === "command" && paletteItems > 0) rows += 3 + Math.min(MAX_PALETTE_ROWS, paletteItems);
   if (palette === "file") rows += paletteItems === 0 ? 3 : 3 + Math.min(MAX_PALETTE_ROWS, paletteItems);
   return rows;
@@ -54,8 +56,10 @@ export function permissionPromptRows(permission: PendingPermission, columns: num
   const preview = permissionPreview(permission);
 
   let header = `Action requires permission: ${permission.toolName}`;
+  const risk = riskLabel(permission.tier);
+  if (risk) header += ` · ${risk.text}`;
   if (preview && !diff && !bashCmd) header += ` (${preview})`;
-  const footer = `[y] approve · [n] reject · [a] always allow "${permission.toolName}" this session`;
+  const footer = permissionFooter(permission);
 
   let rows = 2 + textRows(header, inner) + textRows(footer, inner);
   if (diff && diff.length > 0) {
@@ -64,6 +68,45 @@ export function permissionPromptRows(permission: PendingPermission, columns: num
     rows += 2 + textRows(`$ ${bashCmd}`, inner - 4);
   }
   return rows;
+}
+
+/** Plain-text footer of PermissionPrompt (its rendered form adds colour only). */
+export function permissionFooter(permission: PendingPermission): string {
+  const always =
+    permission.tier === 4
+      ? "always-allow is unavailable for sensitive actions"
+      : `[a] always allow "${permission.toolName}" this session`;
+  return `[y] approve · [n/Esc] reject · ${always}`;
+}
+
+/** Human label for a permission risk tier (see classifyToolRisk). */
+export function riskLabel(tier: number | undefined): { text: string; color: string } | null {
+  switch (tier) {
+    case 0:
+      return { text: "read-only", color: "green" };
+    case 1:
+      return { text: "edits workspace files", color: "yellow" };
+    case 2:
+      return { text: "read-only shell", color: "green" };
+    case 3:
+      return { text: "runs commands / changes state", color: "yellow" };
+    case 4:
+      return { text: "sensitive or destructive", color: "red" };
+    default:
+      return null;
+  }
+}
+
+/**
+ * Height of a notice: one wrapped line, or for multi-line notices a bordered
+ * panel with a dismiss hint.
+ */
+export function noticeRows(notice: string | null, columns: number): number {
+  if (!notice) return 0;
+  if (!notice.includes("\n")) return textRows(notice, columns - 3);
+  // App paddingX (2) + border (2) + paddingX (2)
+  const inner = Math.max(10, columns - 6);
+  return 2 + textRows(notice, inner) + 1;
 }
 
 /** The argument preview PermissionPrompt shows next to the tool name. */

@@ -1,6 +1,6 @@
-import { describe, it } from "node:test";
+import { describe, it, mock } from "node:test";
 import assert from "node:assert";
-import { AgentUIStore } from "./store.js";
+import { AgentUIStore, NOTICE_TTL_MS } from "./store.js";
 
 describe("AgentUIStore & State Transitions (store.ts)", () => {
   it("initializes with default state properly", () => {
@@ -324,5 +324,79 @@ describe("AgentUIStore & State Transitions (store.ts)", () => {
 
     assert.strictEqual(store.getState().messages.length, 2);
     assert.strictEqual(store.getState().turnCount, 2);
+  });
+  it("queues prompts typed during a turn and hands them back for editing", () => {
+    const store = new AgentUIStore("openai", "gpt-4o", true);
+    store.enqueuePrompt("first");
+    store.enqueuePrompt("second");
+    assert.deepStrictEqual(store.getState().queuedPrompts, ["first", "second"]);
+    assert.strictEqual(store.dequeuePrompt(), "first");
+    store.enqueuePrompt("third");
+    assert.strictEqual(store.takeQueue(), "second\n\nthird");
+    assert.deepStrictEqual(store.getState().queuedPrompts, []);
+    assert.strictEqual(store.takeQueue(), null);
+    assert.strictEqual(store.dequeuePrompt(), undefined);
+  });
+
+  it("clears short notices after a while but keeps panels and errors", () => {
+    mock.timers.enable({ apis: ["setTimeout"] });
+    try {
+      const store = new AgentUIStore("openai", "gpt-4o", true);
+      store.setNotice("Model switched");
+      mock.timers.tick(NOTICE_TTL_MS + 1);
+      assert.strictEqual(store.getState().notice, null);
+
+      store.setNotice("Commands\n/help");
+      mock.timers.tick(NOTICE_TTL_MS + 1);
+      assert.strictEqual(store.getState().notice, "Commands\n/help");
+
+      store.setNotice("Error: provider down");
+      mock.timers.tick(NOTICE_TTL_MS + 1);
+      assert.strictEqual(store.getState().notice, "Error: provider down");
+
+      // A newer notice is not cleared by the older one's timer.
+      store.setNotice("one");
+      mock.timers.tick(NOTICE_TTL_MS - 10);
+      store.setNotice("two");
+      mock.timers.tick(20);
+      assert.strictEqual(store.getState().notice, "two");
+    } finally {
+      mock.timers.reset();
+    }
+  });
+
+  it("toggles the latest finished tool's full output (Ctrl+O)", () => {
+    const store = new AgentUIStore("openai", "gpt-4o", true);
+    assert.strictEqual(store.toggleLatestToolOutput(), false);
+    store.beginTurn();
+    store.applyLoopEvent({ type: "tool_start", name: "bash", input: { command: "ls" }, toolCallId: "b1" });
+    store.applyLoopEvent({ type: "tool_result", name: "bash", content: "a\nb\nc", isError: false, toolCallId: "b1" });
+    const row = store.getState().messages.find((m) => m.kind === "tool");
+    assert.strictEqual(row?.toolMeta?.output, "a\nb\nc");
+    assert.strictEqual(store.toggleLatestToolOutput(), true);
+    assert.strictEqual(store.getState().expandedToolId, row?.id);
+    assert.strictEqual(store.toggleLatestToolOutput(), false);
+    assert.strictEqual(store.getState().expandedToolId, null);
+  });
+
+  it("hides a finished plan when the next turn starts, and shows it again on updates", () => {
+    const store = new AgentUIStore("openai", "gpt-4o", true);
+    const done = { id: "1", subject: "x", status: "completed" as const, createdAt: 0, updatedAt: 0 };
+    store.setTasks([done]);
+    assert.strictEqual(store.getState().taskPanelHidden, false);
+    store.beginTurn();
+    assert.strictEqual(store.getState().taskPanelHidden, true);
+    store.applyLoopEvent({ type: "tasks_updated", tasks: [{ ...done, status: "pending" }] });
+    assert.strictEqual(store.getState().taskPanelHidden, false);
+  });
+
+  it("starts a cleared conversation with fresh usage counters", () => {
+    const store = new AgentUIStore("anthropic", "claude-sonnet-4", true);
+    store.applyLoopEvent({ type: "usage", inputTokens: 1000, outputTokens: 10 });
+    store.clearChat();
+    const usage = store.getState().sessionUsage;
+    assert.strictEqual(usage.inputTokens, 0);
+    assert.strictEqual(usage.totalCost, 0);
+    assert.strictEqual(usage.contextTokens, 0);
   });
 });

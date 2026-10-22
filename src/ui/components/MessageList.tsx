@@ -64,6 +64,7 @@ export interface RenderedLine {
     | "tool-success"
     | "tool-error"
     | "tool-error-detail"
+    | "tool-output"
     | "streaming-header"
     | "streaming-thought"
     | "streaming-body"
@@ -81,6 +82,8 @@ export function compileLines(
   streamingThought?: string,
   streamingThoughtDurationMs?: number,
   live?: LiveTurn,
+  /** Tool row whose full output is shown inline (Ctrl+O). */
+  expandedToolId: number | null = null,
 ): RenderedLine[] {
   const contentWidth = Math.max(20, width - 4);
   const lines: RenderedLine[] = [];
@@ -146,17 +149,16 @@ export function compileLines(
     } else if (m.kind === "tool") {
       openTurn(m.id);
       // Check if this starts a run of 3+ consecutive successful read-only tools
-      const isReadOnly = !m.pending && !m.toolError && m.toolName && READ_ONLY_TOOLS.has(m.toolName);
+      const groupable = (t: ViewMessage) =>
+        t.kind === "tool" &&
+        !t.pending &&
+        !t.toolError &&
+        t.id !== expandedToolId &&
+        Boolean(t.toolName && READ_ONLY_TOOLS.has(t.toolName));
+      const isReadOnly = groupable(m);
       if (isReadOnly) {
         let runEnd = i;
-        while (
-          runEnd + 1 < messages.length &&
-          messages[runEnd + 1].kind === "tool" &&
-          !messages[runEnd + 1].pending &&
-          !messages[runEnd + 1].toolError &&
-          messages[runEnd + 1].toolName &&
-          READ_ONLY_TOOLS.has(messages[runEnd + 1].toolName!)
-        ) {
+        while (runEnd + 1 < messages.length && groupable(messages[runEnd + 1])) {
           runEnd++;
         }
         const runLen = runEnd - i + 1;
@@ -175,7 +177,7 @@ export function compileLines(
           lines.push({
             id: `t-group-${m.id}`,
             kind: "tool-success",
-            text: `✔ Explored ${runLen} files (${parts.join(", ")})${durStr}`,
+            text: `✔ Explored · ${parts.join(", ")}${durStr}`,
           });
           i = runEnd; // skip past the group
           continue;
@@ -215,6 +217,10 @@ export function compileLines(
           kind: "tool-success",
           text: `✔ ${toolName}${detail ? ` ${detail}` : ""}${durationStr}`,
         });
+      }
+
+      if (m.id === expandedToolId) {
+        pushToolOutput(lines, m, contentWidth);
       }
     }
   }
@@ -280,6 +286,24 @@ export function compileLines(
   }
 
   return lines;
+}
+
+/** Output lines shown under an expanded tool row. */
+export const MAX_EXPANDED_LINES = 40;
+
+function pushToolOutput(lines: RenderedLine[], m: ViewMessage, contentWidth: number): void {
+  const output = (m.toolMeta?.output ?? m.text ?? "").replace(/\s+$/, "");
+  const wrapped = output ? wrapText(output, contentWidth - 6) : ["(no output)"];
+  const shown = wrapped.slice(0, MAX_EXPANDED_LINES);
+  for (let j = 0; j < shown.length; j++) {
+    lines.push({ id: `t-out-${m.id}-${j}`, kind: "tool-output", text: `│ ${shown[j]}` });
+  }
+  const more = wrapped.length - shown.length;
+  lines.push({
+    id: `t-out-${m.id}-end`,
+    kind: "tool-output",
+    text: `└ ${more > 0 ? `${more} more lines · ` : ""}Ctrl+O to collapse`,
+  });
 }
 
 const MessageLine = memo(function MessageLine({ line }: { line: RenderedLine }) {
@@ -406,6 +430,12 @@ const MessageLine = memo(function MessageLine({ line }: { line: RenderedLine }) 
           </Text>
         </Box>
       );
+    case "tool-output":
+      return (
+        <Box paddingLeft={4}>
+          <Text dimColor>{line.text}</Text>
+        </Box>
+      );
     case "turn-receipt":
       return (
         <Box paddingLeft={2}>
@@ -434,6 +464,7 @@ export function MessageList({
   turnStartedAt = 0,
   paused = false,
   onMaxScrollChange,
+  expandedToolId = null,
 }: {
   messages: ViewMessage[];
   streamingText: string;
@@ -449,6 +480,7 @@ export function MessageList({
   paused?: boolean;
   /** Receives the largest scroll offset that still shows content. */
   onMaxScrollChange?(maxScroll: number): void;
+  expandedToolId?: number | null;
 }) {
   const live = useMemo<LiveTurn>(() => {
     // Has this turn already printed an agent header for an earlier row?
@@ -474,7 +506,10 @@ export function MessageList({
   // Committed history only changes when a row is added, so it is compiled once
   // per structural change. Streaming deltas recompile only the live tail —
   // otherwise every token would re-render markdown for the entire transcript.
-  const committedLines = useMemo(() => compileLines(messages, "", columns), [messages, columns]);
+  const committedLines = useMemo(
+    () => compileLines(messages, "", columns, undefined, undefined, undefined, expandedToolId),
+    [messages, columns, expandedToolId],
+  );
   const streamingLines = useMemo(() => {
     const block = compileLines([], streamingText, columns, streamingThought, streamingThoughtDurationMs, live);
     if (block.length === 0) return [];
