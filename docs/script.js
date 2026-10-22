@@ -7,7 +7,131 @@ document.addEventListener('DOMContentLoaded', () => {
   initClipboardButtons();
   initMobileMenu();
   initTerminalSimulator();
+  initScrollExperience();
 });
+
+const prefersReducedMotion = () =>
+  window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+// 0. Scrolling: anchor offset, progress bar, header state, scroll-spy, reveal, back-to-top
+function initScrollExperience() {
+  const root = document.documentElement;
+  const header = document.getElementById('main-nav') || document.querySelector('header');
+  const backToTop = document.getElementById('back-to-top');
+
+  // Anchor jumps land just below the sticky header, whatever its height.
+  const syncNavOffset = () => {
+    const h = header ? header.getBoundingClientRect().height : 64;
+    root.style.setProperty('--nav-offset', `${Math.round(h + 16)}px`);
+  };
+  syncNavOffset();
+  window.addEventListener('resize', syncNavOffset, { passive: true });
+
+  // One rAF-throttled scroll handler drives the progress bar, header shadow and back-to-top.
+  let ticking = false;
+  const onScroll = () => {
+    if (ticking) return;
+    ticking = true;
+    requestAnimationFrame(() => {
+      ticking = false;
+      const max = root.scrollHeight - window.innerHeight;
+      const y = window.scrollY;
+      root.style.setProperty('--scroll-progress', max > 0 ? Math.min(1, y / max).toFixed(4) : '0');
+      if (header) header.classList.toggle('is-scrolled', y > 8);
+      if (backToTop) backToTop.classList.toggle('is-visible', y > window.innerHeight * 1.2);
+    });
+  };
+  window.addEventListener('scroll', onScroll, { passive: true });
+  onScroll();
+
+  if (backToTop) {
+    backToTop.addEventListener('click', () => {
+      window.scrollTo({ top: 0, behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
+      history.replaceState(null, '', window.location.pathname + window.location.search);
+    });
+  }
+
+  // Deep links (docs.html#mcp-servers): the browser jumps before the Tailwind
+  // CDN has styled the page, so the target moves. Jump again once laid out.
+  if (window.location.hash) {
+    const target = document.getElementById(decodeURIComponent(window.location.hash.slice(1)));
+    if (target) {
+      const jump = () => requestAnimationFrame(() => target.scrollIntoView({ behavior: 'auto', block: 'start' }));
+      if (document.readyState === 'complete') jump();
+      else window.addEventListener('load', jump, { once: true });
+    }
+  }
+
+  initScrollSpy();
+  initReveal();
+}
+
+// Highlights the nav / table-of-contents link for the section currently in view.
+function initScrollSpy() {
+  const links = Array.from(document.querySelectorAll('.nav-link[href^="#"], .toc-item[href^="#"]'));
+  if (links.length === 0 || !('IntersectionObserver' in window)) return;
+
+  const sections = [];
+  const seen = new Set();
+  links.forEach((link) => {
+    const id = link.getAttribute('href').slice(1);
+    const el = id && document.getElementById(id);
+    if (el && !seen.has(id)) {
+      seen.add(id);
+      sections.push(el);
+    }
+  });
+
+  const setActive = (id) => {
+    links.forEach((link) => {
+      const active = link.getAttribute('href') === `#${id}`;
+      link.classList.toggle('is-active', active);
+      if (active) link.setAttribute('aria-current', 'location');
+      else link.removeAttribute('aria-current');
+    });
+  };
+
+  // A section counts as "current" while it crosses a band just below the header.
+  const visible = new Map();
+  const observer = new IntersectionObserver(
+    (entries) => {
+      entries.forEach((entry) => visible.set(entry.target.id, entry.isIntersecting));
+      const current = sections.find((s) => visible.get(s.id));
+      if (current) setActive(current.id);
+      else if (window.scrollY < (sections[0]?.offsetTop ?? 0) - window.innerHeight / 2) setActive('');
+    },
+    { rootMargin: '-30% 0px -60% 0px', threshold: 0 },
+  );
+  sections.forEach((s) => observer.observe(s));
+}
+
+// Fades sections and cards in as they enter the viewport (staggered within a grid).
+function initReveal() {
+  document.querySelectorAll('[data-reveal-group]').forEach((group) => {
+    Array.from(group.children).forEach((child, i) => {
+      child.classList.add('reveal');
+      child.style.setProperty('--reveal-delay', `${Math.min(i, 7) * 70}ms`);
+    });
+  });
+
+  const items = document.querySelectorAll('.reveal');
+  if (prefersReducedMotion() || !('IntersectionObserver' in window)) {
+    items.forEach((el) => el.classList.add('is-visible'));
+    return;
+  }
+
+  const observer = new IntersectionObserver(
+    (entries) => {
+      entries.forEach((entry) => {
+        if (!entry.isIntersecting) return;
+        entry.target.classList.add('is-visible');
+        observer.unobserve(entry.target);
+      });
+    },
+    { rootMargin: '0px 0px -8% 0px', threshold: 0.08 },
+  );
+  items.forEach((el) => observer.observe(el));
+}
 
 // Toast notification helper
 function showToast(message) {

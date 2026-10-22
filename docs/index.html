@@ -59,8 +59,8 @@
           },
           keyframes: {
             glow: {
-              '0%': { opacity: '0.3', transform: 'scale(0.98)' },
-              '100%': { opacity: '0.6', transform: 'scale(1.02)' },
+              '0%': { opacity: '0.55' },
+              '100%': { opacity: '1' },
             },
             float: {
               '0%, 100%': { transform: 'translateY(0px)' },
@@ -77,14 +77,15 @@
   </script>
   
   <link rel="stylesheet" href="styles.css" />
+  <script>document.documentElement.classList.add('js');</script>
 </head>
 <body class="bg-[#090a0f] text-slate-100 font-sans antialiased selection:bg-blue-500 selection:text-white relative overflow-x-hidden min-h-screen">
 
   <!-- Background Ambient Glow & Grid -->
   <div class="fixed inset-0 pointer-events-none z-0 overflow-hidden">
-    <div class="absolute -top-40 left-1/2 -translate-x-1/2 w-[800px] h-[500px] bg-gradient-to-tr from-blue-600/20 via-indigo-600/15 to-purple-600/10 rounded-full blur-[120px] animate-glow-pulse"></div>
-    <div class="absolute top-[600px] -left-40 w-[500px] h-[500px] bg-emerald-600/10 rounded-full blur-[100px]"></div>
-    <div class="absolute top-[1200px] -right-40 w-[600px] h-[600px] bg-amber-600/10 rounded-full blur-[120px]"></div>
+    <div class="glow glow-hero absolute -top-64 left-1/2 -translate-x-1/2 w-[1100px] h-[800px] animate-glow-pulse"></div>
+    <div class="glow glow-emerald absolute top-[40%] -left-72 w-[800px] h-[800px]"></div>
+    <div class="glow glow-amber absolute -bottom-72 -right-72 w-[900px] h-[900px]"></div>
     <div class="absolute inset-0 bg-grid-pattern opacity-[0.04]"></div>
   </div>
 
@@ -101,7 +102,7 @@
   </aside>
 
   <!-- Sticky Glassmorphic Navigation -->
-  <header class="sticky top-0 z-40 backdrop-blur-xl bg-[#090a0f]/80 border-b border-white/10 transition-all duration-300" id="main-nav">
+  <header class="sticky top-0 z-40 backdrop-blur-xl bg-[#090a0f]/80 border-b border-white/10 transition-[background-color,box-shadow] duration-300" id="main-nav">
     <nav class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between" aria-label="Main Navigation">
 
       <!-- Brand Logo -->
@@ -120,12 +121,12 @@
       </a>
 
       <!-- Desktop Navigation Links -->
-      <div class="hidden md:flex items-center gap-8 text-sm font-medium text-slate-300">
-        <a href="#modes" class="hover:text-white transition-colors">Operating Modes</a>
-        <a href="#features" class="hover:text-white transition-colors">Features</a>
-        <a href="#providers" class="hover:text-white transition-colors">LLM Providers</a>
-        <a href="#mcp" class="hover:text-white transition-colors">MCP Tools</a>
-        <a href="#benchmarks" class="hover:text-white transition-colors">Benchmarks</a>
+      <div class="hidden lg:flex items-center gap-7 text-sm font-medium text-slate-300 whitespace-nowrap">
+        <a href="#modes" class="nav-link hover:text-white transition-colors">Operating Modes</a>
+        <a href="#features" class="nav-link hover:text-white transition-colors">Features</a>
+        <a href="#providers" class="nav-link hover:text-white transition-colors">LLM Providers</a>
+        <a href="#mcp" class="nav-link hover:text-white transition-colors">MCP Tools</a>
+        <a href="#benchmarks" class="nav-link hover:text-white transition-colors">Benchmarks</a>
         <a href="docs.html" class="hover:text-white transition-colors text-blue-400">Docs</a>
       </div>
 
@@ -144,7 +145,7 @@
       </div>
 
       <!-- Mobile Hamburger Button -->
-      <div class="flex md:hidden">
+      <div class="flex lg:hidden">
         <button type="button" id="mobile-menu-btn" aria-label="Toggle navigation menu" aria-expanded="false" class="text-slate-400 hover:text-white p-2 rounded-lg bg-white/5 border border-white/10 focus:outline-none focus:ring-2 focus:ring-blue-500">
           <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7"></path></svg>
         </button>
@@ -152,12 +153,12 @@
     </nav>
 
     <!-- Mobile Drawer Menu -->
-    <div id="mobile-menu" class="hidden md:hidden border-b border-white/10 bg-[#0c0e15] px-4 pt-2 pb-6 space-y-3">
-      <a href="#modes" class="block py-2 text-base font-medium text-slate-300 hover:text-white">Operating Modes</a>
-      <a href="#features" class="block py-2 text-base font-medium text-slate-300 hover:text-white">Features</a>
-      <a href="#providers" class="block py-2 text-base font-medium text-slate-300 hover:text-white">LLM Providers</a>
-      <a href="#mcp" class="block py-2 text-base font-medium text-slate-300 hover:text-white">MCP Tools</a>
-      <a href="#benchmarks" class="block py-2 text-base font-medium text-slate-300 hover:text-white">Benchmarks</a>
+    <div id="mobile-menu" class="hidden lg:hidden border-b border-white/10 bg-[#0c0e15] px-4 pt-2 pb-6 space-y-3">
+      <a href="#modes" class="nav-link block py-2 text-base font-medium text-slate-300 hover:text-white">Operating Modes</a>
+      <a href="#features" class="nav-link block py-2 text-base font-medium text-slate-300 hover:text-white">Features</a>
+      <a href="#providers" class="nav-link block py-2 text-base font-medium text-slate-300 hover:text-white">LLM Providers</a>
+      <a href="#mcp" class="nav-link block py-2 text-base font-medium text-slate-300 hover:text-white">MCP Tools</a>
+      <a href="#benchmarks" class="nav-link block py-2 text-base font-medium text-slate-300 hover:text-white">Benchmarks</a>
       <a href="docs.html" class="block py-2 text-base font-medium text-blue-400 hover:text-blue-300">Documentation</a>
       <div class="pt-4 flex flex-col gap-2">
         <button type="button" class="copy-install-btn w-full py-2.5 rounded-lg text-sm font-semibold text-white bg-blue-600 hover:bg-blue-500 text-center shadow-lg" data-command="npm install -g @theruid/ruid">
@@ -168,6 +169,9 @@
         </a>
       </div>
     </div>
+
+    <!-- Reading progress -->
+    <div id="scroll-progress" aria-hidden="true"></div>
   </header>
 
   <main class="relative z-10">
@@ -239,7 +243,7 @@
     <section id="modes" class="py-24 border-t border-white/10 bg-[#0c0e15] relative" aria-labelledby="modes-title">
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         
-        <div class="text-center max-w-3xl mx-auto mb-16">
+        <div class="reveal text-center max-w-3xl mx-auto mb-16">
           <span class="text-xs font-mono uppercase tracking-widest text-blue-400 font-bold bg-blue-500/10 px-3 py-1 rounded-full border border-blue-500/20">
             Control & Autonomy Matrix
           </span>
@@ -251,7 +255,7 @@
           </p>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-8" data-reveal-group>
           
           <!-- Mode 1: CODE -->
           <div class="relative rounded-2xl bg-[#11141d] border border-emerald-500/30 p-8 shadow-xl hover:border-emerald-500/60 transition-all group flex flex-col justify-between">
@@ -371,7 +375,7 @@
     <!-- SECTION: CORE FEATURES & ARCHITECTURE -->
     <section id="features" class="py-24 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8" aria-labelledby="features-title">
       
-      <div class="text-center max-w-3xl mx-auto mb-20">
+      <div class="reveal text-center max-w-3xl mx-auto mb-20">
         <span class="text-xs font-mono uppercase tracking-widest text-indigo-400 font-bold bg-indigo-500/10 px-3 py-1 rounded-full border border-indigo-500/20">
           Engineered for Power Users
         </span>
@@ -383,7 +387,7 @@
         </p>
       </div>
 
-      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8" data-reveal-group>
         
         <!-- Feature 1: Subagent Parallelism -->
         <div class="p-8 rounded-2xl bg-[#11141d] border border-white/10 hover:border-blue-500/40 transition-all group">
@@ -459,7 +463,7 @@
     <section id="providers" class="py-24 border-t border-white/10 bg-[#0c0e15] relative" aria-labelledby="providers-title">
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         
-        <div class="text-center max-w-3xl mx-auto mb-16">
+        <div class="reveal text-center max-w-3xl mx-auto mb-16">
           <span class="text-xs font-mono uppercase tracking-widest text-emerald-400 font-bold bg-emerald-500/10 px-3 py-1 rounded-full border border-emerald-500/20">
             Zero Vendor Lock-in
           </span>
@@ -472,7 +476,7 @@
         </div>
 
         <!-- Provider Badges Grid -->
-        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 max-w-4xl mx-auto mb-12">
+        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 max-w-4xl mx-auto mb-12" data-reveal-group>
 
           <div class="p-4 rounded-xl bg-[#11141d] border border-white/10 flex items-center gap-3.5 hover:border-blue-500/40 transition-colors">
             <div class="w-8 h-8 rounded-lg bg-orange-500/20 text-orange-400 flex items-center justify-center font-bold font-mono text-xs">An</div>
@@ -541,7 +545,7 @@
         </div>
 
         <!-- Provider Switcher CLI Snippet Box -->
-        <div class="max-w-2xl mx-auto rounded-xl bg-[#090b10] border border-white/10 p-4 font-mono text-xs">
+        <div class="reveal max-w-2xl mx-auto rounded-xl bg-[#090b10] border border-white/10 p-4 font-mono text-xs">
           <div class="flex items-center justify-between text-slate-400 mb-2 pb-2 border-b border-white/5">
             <span>Provider Switching in CLI</span>
             <span class="text-emerald-400">Instant</span>
@@ -560,7 +564,7 @@
     <!-- SECTION: MODEL CONTEXT PROTOCOL (MCP) ECOSYSTEM -->
     <section id="mcp" class="py-24 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8" aria-labelledby="mcp-title">
       
-      <div class="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center" data-reveal-group>
         
         <div class="lg:col-span-6">
           <span class="text-xs font-mono uppercase tracking-widest text-purple-400 font-bold bg-purple-500/10 px-3 py-1 rounded-full border border-purple-500/20">
@@ -636,7 +640,7 @@
     <section id="benchmarks" class="py-24 border-t border-white/10 bg-[#0c0e15]" aria-labelledby="benchmark-title">
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         
-        <div class="text-center max-w-3xl mx-auto mb-16">
+        <div class="reveal text-center max-w-3xl mx-auto mb-16">
           <span class="text-xs font-mono uppercase tracking-widest text-amber-400 font-bold bg-amber-500/10 px-3 py-1 rounded-full border border-amber-500/20">
             Blistering Velocity
           </span>
@@ -648,7 +652,7 @@
           </p>
         </div>
 
-        <div class="overflow-x-auto">
+        <div class="reveal overflow-x-auto">
           <table class="w-full text-left border-collapse rounded-2xl overflow-hidden bg-[#11141d] border border-white/10">
             <thead>
               <tr class="bg-[#161a26] border-b border-white/10 text-xs font-mono text-slate-400 uppercase">
@@ -706,7 +710,7 @@
     <section class="py-24 relative overflow-hidden">
       <div class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 text-center relative z-10">
         
-        <div class="p-10 sm:p-16 rounded-3xl bg-gradient-to-b from-blue-950/40 via-[#11141f] to-[#0d0f17] border border-blue-500/30 shadow-2xl relative">
+        <div class="reveal p-10 sm:p-16 rounded-3xl bg-gradient-to-b from-blue-950/40 via-[#11141f] to-[#0d0f17] border border-blue-500/30 shadow-2xl relative">
           
           <h2 class="text-3xl sm:text-5xl font-extrabold text-white tracking-tight">
             Ready for Lightning Fast Terminal AI?
@@ -756,6 +760,11 @@
 
     </div>
   </footer>
+
+  <!-- Back to top -->
+  <button type="button" id="back-to-top" aria-label="Back to top" class="fixed bottom-6 left-6 z-40 w-11 h-11 rounded-full bg-[#11141f]/90 border border-white/15 text-slate-300 hover:text-white hover:border-blue-500/60 shadow-xl backdrop-blur-xl flex items-center justify-center">
+    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"></path></svg>
+  </button>
 
   <!-- Toast Notification System -->
   <div id="toast" class="fixed bottom-6 right-6 z-50 transform translate-y-20 opacity-0 transition-all duration-300 flex items-center gap-3 bg-[#11141f] border border-blue-500/50 text-white px-4 py-3 rounded-xl shadow-2xl backdrop-blur-xl text-xs font-mono" role="status" aria-live="polite">

@@ -119,3 +119,114 @@ a:focus-visible, button:focus-visible {
   outline: 2px solid #3b82f6;
   outline-offset: 2px;
 }
+
+/* ---------------------------------------------------------------
+   Scrolling experience
+   --------------------------------------------------------------- */
+
+/* Anchor jumps land below the sticky header (script.js keeps --nav-offset in sync). */
+html {
+  scroll-padding-top: var(--nav-offset, 88px);
+}
+
+/* Ambient glows: soft radial gradients are far cheaper to composite while
+   scrolling than large blur() filters. */
+.glow {
+  border-radius: 9999px;
+  will-change: opacity;
+}
+.glow-hero {
+  background: radial-gradient(closest-side, rgba(59, 130, 246, 0.22), rgba(99, 102, 241, 0.12) 45%, rgba(147, 51, 234, 0.05) 70%, transparent);
+}
+.glow-emerald {
+  background: radial-gradient(closest-side, rgba(16, 185, 129, 0.10), transparent);
+}
+.glow-amber {
+  background: radial-gradient(closest-side, rgba(245, 158, 11, 0.09), transparent);
+}
+
+/* Reading progress bar along the bottom edge of the sticky header. */
+#scroll-progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  transform-origin: 0 50%;
+  transform: scaleX(var(--scroll-progress, 0));
+  background: linear-gradient(90deg, #3b82f6, #818cf8, #c084fc);
+  pointer-events: none;
+}
+
+#main-nav.is-scrolled {
+  background-color: rgba(9, 10, 15, 0.92);
+  box-shadow: 0 10px 30px -12px rgba(0, 0, 0, 0.6);
+}
+
+/* Scroll-spy: the section in view is highlighted in the nav. */
+.nav-link {
+  position: relative;
+}
+.nav-link.is-active {
+  color: #ffffff;
+}
+#main-nav nav .nav-link.is-active::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -6px;
+  height: 2px;
+  border-radius: 2px;
+  background: #3b82f6;
+}
+#mobile-menu .nav-link.is-active {
+  color: #60a5fa;
+}
+
+/* Docs sidebar: same highlighting for the table of contents. */
+.toc-item.is-active {
+  color: #ffffff;
+  background-color: rgba(59, 130, 246, 0.12);
+  box-shadow: inset 2px 0 0 #3b82f6;
+}
+
+/* Reveal on scroll — only hidden when script.js is running to reveal it. */
+.js .reveal {
+  opacity: 0;
+  transform: translateY(18px);
+  transition: opacity 0.6s ease, transform 0.6s cubic-bezier(0.2, 0.7, 0.2, 1);
+  transition-delay: var(--reveal-delay, 0ms);
+}
+.js .reveal.is-visible {
+  opacity: 1;
+  transform: none;
+}
+
+/* Back-to-top button */
+#back-to-top {
+  opacity: 0;
+  transform: translateY(12px);
+  pointer-events: none;
+  transition: opacity 0.25s ease, transform 0.25s ease, color 0.2s, border-color 0.2s;
+}
+#back-to-top.is-visible {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  .js .reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+  .animate-glow-pulse,
+  .animate-ping {
+    animation: none !important;
+  }
+}
