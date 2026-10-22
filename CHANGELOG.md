@@ -5,6 +5,28 @@ All notable changes to `@theruid/ruid` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.49] - 2026-10-22
+
+### Fixed
+- Ctrl+C while an approval prompt is open no longer hangs the turn.
+- Interrupted or failed turns keep the work they finished in the conversation, so the agent remembers edits it made; turns that produced nothing leave history unchanged.
+- Parallel calls to the same tool no longer show each other's results or timings.
+- Auto-approved tools no longer flash the approval prompt.
+- `/rollback` steps back one more turn each time, and `/rollback <turn>` removes the matching conversation turns.
+- `/clear` starts a new session instead of overwriting the saved one; a session's creation date is preserved.
+- `@file` mentions respect workspace boundaries and never attach secrets such as `.env` files.
+- The status bar's context % reflects the current prompt size; costs are priced per request, include Anthropic cache tokens, and unknown/local models no longer show a guessed price.
+- PageUp/PageDown scroll the right distance, Home/End jump to the top/bottom, and scrolling stops at the top.
+- `/model <id>` and session resume keep model capabilities.
+- Layout accounts for multi-line input, notices, diffs and task panels, so the status bar stays on screen.
+- The update banner no longer installs on a stray "y"; install with `/update`.
+- Prompt history survives the pickers, pasted text keeps its line breaks, and the terminal is restored after a crash.
+- Turns that hit the iteration limit end cleanly; the session JSONL log appends only new messages.
+
+### Changed
+- MCP count shows connected servers; `/help` lists every command; skill mode switches are announced and reverted after the skill.
+- Landing page: progress bar, active-section highlighting, reveal-on-scroll, back-to-top, correct anchor offsets and lighter background effects.
+
 ## [0.3.22] - 2026-08-29
 
 ### Changed
