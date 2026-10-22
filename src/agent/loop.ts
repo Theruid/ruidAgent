@@ -75,8 +75,49 @@ import {
 } from "./staleState.js";
 export { type FailureClassification, classifyToolFailure, type StaleStateTrack, normalizeResourcePath } from "./staleState.js";
 
+/**
+ * Thrown when a turn fails after it already produced work. `messages` is the
+ * history up to the failure, closed with an assistant note so roles still
+ * alternate — callers keep it so the model remembers the edits it made.
+ */
+export class AgentLoopError extends Error {
+  constructor(message: string, readonly messages: LLMMessage[]) {
+    super(message);
+    this.name = "AgentLoopError";
+  }
+}
+
+/** Resolves like `decision`, or false as soon as the signal aborts. */
+function unlessAborted(decision: Promise<boolean>, signal?: AbortSignal): Promise<boolean> {
+  if (!signal) return decision;
+  if (signal.aborted) return Promise.resolve(false);
+  return new Promise<boolean>((resolve) => {
+    const onAbort = () => resolve(false);
+    signal.addEventListener("abort", onAbort, { once: true });
+    decision.then(
+      (ok) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(ok);
+      },
+      () => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(false);
+      },
+    );
+  });
+}
+
+/** Closes a turn that ended on a user message with an assistant note. */
+function closeTurn(messages: LLMMessage[], note: string): LLMMessage[] {
+  if (messages.at(-1)?.role === "user") {
+    messages.push({ role: "assistant", content: [{ type: "text", text: note }] });
+  }
+  return messages;
+}
+
 // Runs the agentic loop to completion and returns the full message history
-// so the REPL can continue the conversation across turns.
+// so the REPL can continue the conversation across turns. An aborted turn
+// returns normally with whatever it completed.
 export async function runAgentLoop(options: LoopOptions): Promise<LLMMessage[]> {
   const ws = new Workspace(options.workspaceRoot ?? process.cwd());
   const taskStore = options.taskStore ?? new TaskStore();
@@ -156,8 +197,12 @@ export async function runAgentLoop(options: LoopOptions): Promise<LLMMessage[]> 
 
   // Track active stale_state failures per resource path
   const staleStateMap = new Map<string, StaleStateTrack>();
+  /** Set once an assistant message lands in history for this turn. */
+  let producedOutput = false;
+  let hitIterationLimit = false;
 
   for (let iteration = 1; iteration <= maxIterations; iteration++) {
+    if (options.signal?.aborted) break;
     options.onEvent?.({ type: "iteration", count: iteration });
 
     const tokenEstimate = estimateHistoryTokens(messages);
@@ -169,7 +214,12 @@ export async function runAgentLoop(options: LoopOptions): Promise<LLMMessage[]> 
     }
     // Phase 2 (Semantic LLM Summarization at 85% threshold)
     else if (tokenEstimate > maxContextTokens * 0.85) {
-      messages = await semanticSummarizeHistory(messages, options.provider, options.model, 4, options.signal);
+      try {
+        messages = await semanticSummarizeHistory(messages, options.provider, options.model, 4, options.signal);
+      } catch (e) {
+        if (options.signal?.aborted) break;
+        throw e;
+      }
     }
 
     const shouldThink = options.thinkingEnabled !== false && caps.supportsThinking;
@@ -230,8 +280,21 @@ export async function runAgentLoop(options: LoopOptions): Promise<LLMMessage[]> 
       errors.push(e instanceof Error ? e.message : String(e));
     }
 
+    if (options.signal?.aborted) {
+      // Keep any text that streamed before the abort; tool calls without
+      // results would leave the history unusable.
+      const partial = content.filter((c) => c.type === "text" && c.text.trim());
+      if (partial.length > 0) {
+        messages.push({ role: "assistant", content: partial });
+        producedOutput = true;
+      }
+      break;
+    }
+
     if (errors.length > 0 && content.length === 0) {
-      throw new Error(`Provider error: ${errors.join("; ")}`);
+      const message = `Provider error: ${errors.join("; ")}`;
+      if (!producedOutput) throw new Error(message);
+      throw new AgentLoopError(message, closeTurn(messages, `(turn ended early: ${message})`));
     }
 
     if (content.length === 0) {
@@ -245,6 +308,7 @@ export async function runAgentLoop(options: LoopOptions): Promise<LLMMessage[]> 
     }
 
     messages.push({ role: "assistant", content });
+    producedOutput = true;
 
     const toolCalls = content.filter((c): c is Extract<typeof c, { type: "tool_call" }> => c.type === "tool_call");
     if (toolCalls.length === 0) break; // final text answer
@@ -288,8 +352,17 @@ export async function runAgentLoop(options: LoopOptions): Promise<LLMMessage[]> 
         approvals.push(true);
         continue;
       }
-      options.onEvent?.({ type: "permission_request", name: call.name, input: call.input, toolCallId: call.id });
-      approvals.push(await permissions.check(call.name, call.input));
+      if (options.signal?.aborted) {
+        approvals.push(false);
+        continue;
+      }
+      // Only surface a prompt when the user will actually be asked; calls the
+      // manager decides on its own would otherwise flash the approval UI.
+      if (permissions.wouldPrompt?.(call.name, call.input) ?? true) {
+        options.onEvent?.({ type: "permission_request", name: call.name, input: call.input, toolCallId: call.id });
+      }
+      // An approval prompt must not outlive an aborted turn.
+      approvals.push(await unlessAborted(permissions.check(call.name, call.input), options.signal));
     }
 
     // Phase 2: Partition into read-only (parallel) and mutating (serial in strict order)
@@ -521,15 +594,19 @@ export async function runAgentLoop(options: LoopOptions): Promise<LLMMessage[]> 
 
     messages.push({ role: "user", content: results });
 
-    if (iteration === maxIterations) {
-      messages.push({
-        role: "user",
-        content: [
-          { type: "text", text: "(max iterations reached — summarize what was done and stop)" },
-        ],
-      });
-    }
+    if (iteration === maxIterations) hitIterationLimit = true;
   }
 
-  return messages;
+  if (!producedOutput && options.signal?.aborted) {
+    // Nothing happened yet: leave the caller's history as it was.
+    return [...(options.messages ?? [])];
+  }
+  return closeTurn(
+    messages,
+    options.signal?.aborted
+      ? "(turn interrupted by the user before it finished)"
+      : hitIterationLimit
+        ? "(stopped after reaching the iteration limit before finishing)"
+        : "(turn ended)",
+  );
 }

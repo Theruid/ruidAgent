@@ -1,4 +1,4 @@
-import React, { memo, useMemo } from "react";
+import React, { memo, useEffect, useMemo } from "react";
 import { Box, Text } from "ink";
 import type { ActiveAction, ViewMessage, TurnReceipt } from "../store.js";
 import { wrapText, truncateLine } from "../utils/wrap.js";
@@ -433,6 +433,7 @@ export function MessageList({
   activeAction = null,
   turnStartedAt = 0,
   paused = false,
+  onMaxScrollChange,
 }: {
   messages: ViewMessage[];
   streamingText: string;
@@ -446,6 +447,8 @@ export function MessageList({
   activeAction?: ActiveAction | null;
   turnStartedAt?: number;
   paused?: boolean;
+  /** Receives the largest scroll offset that still shows content. */
+  onMaxScrollChange?(maxScroll: number): void;
 }) {
   const live = useMemo<LiveTurn>(() => {
     // Has this turn already printed an agent header for an earlier row?
@@ -491,6 +494,12 @@ export function MessageList({
   const contentHeight = Math.max(1, viewportHeight - indicatorAllowance);
 
   const maxScroll = Math.max(0, totalLines - contentHeight);
+  // Once scrolled, two rows go to the above/below indicators, so the range
+  // the store may scroll through is measured with them in place.
+  const scrolledMax = Math.max(0, totalLines - Math.max(1, viewportHeight - 2));
+  useEffect(() => {
+    onMaxScrollChange?.(scrolledMax);
+  }, [scrolledMax, onMaxScrollChange]);
   const clampedOffset = Math.min(Math.max(0, scrollOffset), maxScroll);
 
   const startIdx = Math.max(0, totalLines - contentHeight - clampedOffset);
@@ -505,7 +514,7 @@ export function MessageList({
       {clampedOffset > 0 && linesAbove > 0 && (
         <Box paddingLeft={1}>
           <Text dimColor>
-            ↑ {linesAbove} lines above · [PgUp/PgDn to scroll, End for bottom]
+            ↑ {linesAbove} lines above · [PgUp/PgDn to scroll, Home/End to jump]
           </Text>
         </Box>
       )}

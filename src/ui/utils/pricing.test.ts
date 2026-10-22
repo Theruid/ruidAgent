@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert";
-import { calculateCost, formatTokenCount, formatCost, formatLatency, formatDuration } from "./pricing.js";
+import { calculateCost, hasKnownPricing, formatTokenCount, formatCost, formatLatency, formatDuration } from "./pricing.js";
 
 describe("Pricing & Token Formatting Utilities (pricing.ts)", () => {
   it("calculates cost accurately for Anthropic Claude Sonnet 4 / 5", () => {
@@ -36,10 +36,11 @@ describe("Pricing & Token Formatting Utilities (pricing.ts)", () => {
     assert.strictEqual(dsCost, 0.55 + 2.19);
   });
 
-  it("falls back to default rates for unknown models", () => {
-    // default rates: [2.5, 10.0]
-    const defCost = calculateCost("custom-unknown-model", 1_000_000, 1_000_000);
-    assert.strictEqual(defCost, 12.5);
+  it("prices unknown models (e.g. local Ollama) at zero instead of a guessed rate", () => {
+    assert.strictEqual(calculateCost("custom-unknown-model", 1_000_000, 1_000_000), 0);
+    assert.strictEqual(calculateCost("llama3.1:8b", 1_000_000, 1_000_000), 0);
+    assert.strictEqual(hasKnownPricing("custom-unknown-model"), false);
+    assert.strictEqual(hasKnownPricing("claude-sonnet-4-5"), true);
   });
 
   it("formats token counts properly", () => {

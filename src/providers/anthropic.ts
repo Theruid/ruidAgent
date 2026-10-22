@@ -282,5 +282,13 @@ export async function* parseStream(
     }
   }
 
+  // Anthropic's input_tokens excludes cached tokens; normalize to the total
+  // prompt size like OpenAI's prompt_tokens (see Usage.inputTokens).
+  if (usage) {
+    usage = {
+      ...usage,
+      inputTokens: usage.inputTokens + (usage.cacheReadInputTokens ?? 0) + (usage.cacheCreationInputTokens ?? 0),
+    };
+  }
   yield { type: "message_delta", stopReason, usage };
 }

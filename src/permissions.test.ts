@@ -143,4 +143,24 @@ describe("Granular Permissions & Safety Risk Tiers", () => {
     setWorkspaceTrusted(testWs, true);
     assert.strictEqual(isWorkspaceTrusted(testWs), true);
   });
+  it("reports whether a call would prompt, so auto-decided calls show no approval UI", () => {
+    const code = createDeferredPermissions(new Set(["write_file"]), "code");
+    assert.strictEqual(code.manager.wouldPrompt?.("read_file", { path: "src/a.ts" }), false);
+    assert.strictEqual(code.manager.wouldPrompt?.("write_file", { path: "src/a.ts" }), false);
+    assert.strictEqual(code.manager.wouldPrompt?.("bash", { command: "rm -rf build" }), true);
+    assert.strictEqual(code.manager.wouldPrompt?.("read_file", { path: ".env" }), true);
+
+    const plan = createDeferredPermissions(new Set(), "plan");
+    assert.strictEqual(plan.manager.wouldPrompt?.("write_file", { path: "src/a.ts" }), false);
+  });
+
+  it("cancelPending rejects the prompt that is waiting for an answer", async () => {
+    const perm = createDeferredPermissions(new Set(), "code");
+    const answer = perm.manager.check("write_file", { path: "src/a.ts" });
+    assert.strictEqual(perm.isPending(), true);
+    perm.cancelPending();
+    assert.strictEqual(await answer, false);
+    assert.strictEqual(perm.isPending(), false);
+    perm.cancelPending(); // no-op without a pending prompt
+  });
 });

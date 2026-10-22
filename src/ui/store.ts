@@ -31,6 +31,8 @@ export interface ViewMessage {
   thought?: string;
   thoughtDurationMs?: number;
   toolName?: string;
+  /** Provider tool-call id — pairs a result with its row when one tool runs several times in a batch. */
+  toolCallId?: string;
   toolError?: boolean;
   /** Tool row still awaiting its result — shows a spinner. */
   pending?: boolean;
@@ -60,6 +62,8 @@ export interface SessionUsage {
   cacheCreationInputTokens: number;
   cacheReadInputTokens: number;
   totalCost: number;
+  /** Prompt size of the most recent request — what the context window is holding now. */
+  contextTokens: number;
 }
 
 export interface UIState {
@@ -124,6 +128,10 @@ export class AgentUIStore {
   private thoughtDurationMs: number | null = null;
   private nextId = 1;
   private toolStartTimes = new Map<string, number>();
+  /** Largest useful scrollOffset, reported by the message list after layout. */
+  private maxScroll = Number.POSITIVE_INFINITY;
+  /** Submitted prompts, oldest first. Lives here so it survives InputBox remounts. */
+  readonly promptHistory: string[] = [];
   private turnStartedAt = 0;
   private turnCostBefore = 0;
   /** Tool names invoked during this turn, in first-call order (deduped). */
@@ -161,6 +169,7 @@ export class AgentUIStore {
         cacheCreationInputTokens: 0,
         cacheReadInputTokens: 0,
         totalCost: 0,
+        contextTokens: 0,
       },
       lastTurnDurationMs: 0,
       tasks: [],
@@ -249,12 +258,25 @@ export class AgentUIStore {
     this.set({ memoryCount: count }, true);
   }
 
+  /** Called by the message list whenever the scrollable range changes. */
+  setMaxScroll = (max: number): void => {
+    this.maxScroll = Math.max(0, max);
+    if (this.state.scrollOffset > this.maxScroll) {
+      this.set({ scrollOffset: this.maxScroll }, true);
+    }
+  };
+
   setScrollOffset(offset: number): void {
-    this.set({ scrollOffset: Math.max(0, offset) }, true);
+    this.set({ scrollOffset: Math.min(this.maxScroll, Math.max(0, offset)) }, true);
   }
 
   scrollUp(lines = 5): void {
-    this.set({ scrollOffset: this.state.scrollOffset + lines }, true);
+    const next = Math.min(this.maxScroll, this.state.scrollOffset + lines);
+    if (next !== this.state.scrollOffset) this.set({ scrollOffset: next }, true);
+  }
+
+  scrollToTop(): void {
+    if (Number.isFinite(this.maxScroll)) this.setScrollOffset(this.maxScroll);
   }
 
   scrollDown(lines = 5): void {
@@ -407,7 +429,8 @@ export class AgentUIStore {
       }
 
       case "tool_start": {
-        this.toolStartTimes.set(e.name, Date.now());
+        const callKey = e.toolCallId ?? e.name;
+        this.toolStartTimes.set(callKey, Date.now());
         const inputObj = e.input && typeof e.input === "object" ? (e.input as Record<string, unknown>) : undefined;
         const badge = formatToolBadge(e.name, inputObj, undefined, false);
         const msg: ViewMessage = {
@@ -415,6 +438,7 @@ export class AgentUIStore {
           kind: "tool",
           text: "",
           toolName: e.name,
+          toolCallId: e.toolCallId,
           pending: true,
           toolMeta: {
             input: inputObj,
@@ -426,7 +450,7 @@ export class AgentUIStore {
         // the tool row — otherwise the tool renders above the message that
         // triggered it.
         this.toolsThisTurn.add(badge.title);
-        this.runningTools.set(e.toolCallId ?? e.name, {
+        this.runningTools.set(callKey, {
           title: badge.title,
           detail: badge.detail,
           startedAt: Date.now(),
@@ -447,18 +471,24 @@ export class AgentUIStore {
       }
 
       case "tool_result": {
-        const startTime = this.toolStartTimes.get(e.name);
+        const callKey = e.toolCallId ?? e.name;
+        const startTime = this.toolStartTimes.get(callKey);
         const durationMs = startTime ? Date.now() - startTime : undefined;
-        this.toolStartTimes.delete(e.name);
-        this.runningTools.delete(e.toolCallId ?? e.name);
+        this.toolStartTimes.delete(callKey);
+        this.runningTools.delete(callKey);
 
         const messages = [...this.state.messages];
-        let idx = -1;
-        for (let i = messages.length - 1; i >= 0; i--) {
-          if (messages[i].kind === "tool" && messages[i].pending && messages[i].toolName === e.name) {
-            idx = i;
-            break;
-          }
+        const isPendingTool = (m: ViewMessage) => m.kind === "tool" && m.pending;
+        // Match by call id; fall back to the oldest pending row of that tool
+        // when the provider gave no id.
+        let idx = e.toolCallId
+          ? messages.findIndex((m) => isPendingTool(m) && m.toolCallId === e.toolCallId)
+          : -1;
+        if (idx < 0) {
+          idx = messages.findIndex((m) => isPendingTool(m) && m.toolName === e.name && !m.toolCallId);
+        }
+        if (idx < 0 && !e.toolCallId) {
+          idx = messages.findIndex((m) => isPendingTool(m) && m.toolName === e.name);
         }
         if (idx >= 0) {
           const oldMsg = messages[idx];
@@ -516,19 +546,25 @@ export class AgentUIStore {
         break;
 
       case "usage": {
-        const newIn = this.state.sessionUsage.inputTokens + e.inputTokens;
-        const newOut = this.state.sessionUsage.outputTokens + e.outputTokens;
-        const newCacheCreation = this.state.sessionUsage.cacheCreationInputTokens + (e.cacheCreationInputTokens ?? 0);
-        const newCacheRead = this.state.sessionUsage.cacheReadInputTokens + (e.cacheReadInputTokens ?? 0);
-        const totalCost = calculateCost(this.state.model, newIn, newOut, newCacheRead, newCacheCreation);
+        const prev = this.state.sessionUsage;
+        // Price each request at the model that served it, so switching models
+        // mid-session does not reprice earlier turns.
+        const requestCost = calculateCost(
+          this.state.model,
+          e.inputTokens,
+          e.outputTokens,
+          e.cacheReadInputTokens ?? 0,
+          e.cacheCreationInputTokens ?? 0,
+        );
         this.set(
           {
             sessionUsage: {
-              inputTokens: newIn,
-              outputTokens: newOut,
-              cacheCreationInputTokens: newCacheCreation,
-              cacheReadInputTokens: newCacheRead,
-              totalCost,
+              inputTokens: prev.inputTokens + e.inputTokens,
+              outputTokens: prev.outputTokens + e.outputTokens,
+              cacheCreationInputTokens: prev.cacheCreationInputTokens + (e.cacheCreationInputTokens ?? 0),
+              cacheReadInputTokens: prev.cacheReadInputTokens + (e.cacheReadInputTokens ?? 0),
+              totalCost: prev.totalCost + requestCost,
+              contextTokens: e.inputTokens,
             },
             lastTurnDurationMs: e.durationMs ?? this.state.lastTurnDurationMs,
           },

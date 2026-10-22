@@ -30,11 +30,25 @@ const PRICING_PER_MILLION: Record<string, [number, number]> = {
   "mixtral-8x7b": [0.24, 0.24],
 };
 
-const DEFAULT_RATES: [number, number] = [2.5, 10.0];
+function ratesFor(model: string): [number, number] | null {
+  const normalized = (model || "").toLowerCase();
+  for (const [key, val] of Object.entries(PRICING_PER_MILLION)) {
+    if (normalized.includes(key)) return val;
+  }
+  return null;
+}
+
+/** True when the model has an entry in the pricing table. */
+export function hasKnownPricing(model: string): boolean {
+  return ratesFor(model) !== null;
+}
 
 /**
  * Calculates estimated USD cost from token usage for a given model,
  * accounting for prompt caching discounts (0.1x for cache reads, 1.25x for cache creation).
+ * `inTokens` is the total prompt size, cache reads and writes included.
+ * Models missing from the table (local Ollama models, custom endpoints) cost 0
+ * rather than a guessed rate.
  */
 export function calculateCost(
   model: string,
@@ -43,15 +57,8 @@ export function calculateCost(
   cacheReadTokens = 0,
   cacheCreationTokens = 0
 ): number {
-  const normalized = (model || "").toLowerCase();
-  let rates = DEFAULT_RATES;
-
-  for (const [key, val] of Object.entries(PRICING_PER_MILLION)) {
-    if (normalized.includes(key)) {
-      rates = val;
-      break;
-    }
-  }
+  const rates = ratesFor(model);
+  if (!rates) return 0;
 
   // Base prompt tokens excluding cache read/creation
   const baseInputTokens = Math.max(0, inTokens - cacheReadTokens - cacheCreationTokens);

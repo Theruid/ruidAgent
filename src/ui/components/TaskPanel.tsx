@@ -1,8 +1,7 @@
 import React from "react";
 import { Box, Text } from "ink";
 import type { AgentTask } from "../../tools/tasks.js";
-
-const MAX_VISIBLE_TASKS = 5;
+import { taskWindow } from "../utils/layout.js";
 
 export function TaskPanel({ tasks }: { tasks: AgentTask[] }) {
   if (tasks.length === 0) return null;
@@ -28,18 +27,7 @@ export function TaskPanel({ tasks }: { tasks: AgentTask[] }) {
     );
   }
 
-  let startIndex = 0;
-  if (total > MAX_VISIBLE_TASKS) {
-    const activeIdx = tasks.findIndex((t) => t.status === "in_progress");
-    const targetIdx = activeIdx !== -1 ? activeIdx : tasks.findIndex((t) => t.status === "pending");
-    const focusIdx = targetIdx !== -1 ? targetIdx : total - 1;
-
-    startIndex = Math.max(0, Math.min(focusIdx - Math.floor(MAX_VISIBLE_TASKS / 2), total - MAX_VISIBLE_TASKS));
-  }
-
-  const visibleTasks = total > MAX_VISIBLE_TASKS ? tasks.slice(startIndex, startIndex + MAX_VISIBLE_TASKS) : tasks;
-  const hiddenAbove = startIndex;
-  const hiddenBelow = total - (startIndex + visibleTasks.length);
+  const { visible: visibleTasks, hiddenAbove, hiddenBelow } = taskWindow(tasks);
 
   return (
     <Box
@@ -77,7 +65,7 @@ export function TaskPanel({ tasks }: { tasks: AgentTask[] }) {
         return (
           <Box key={task.id} paddingLeft={1}>
             <Text color={color}>{symbol} </Text>
-            <Text bold={task.status === "in_progress"} color={task.status === "completed" ? "gray" : undefined}>
+            <Text bold={task.status === "in_progress"} color={task.status === "completed" ? "gray" : undefined} wrap="truncate">
               #{task.id} {task.subject}
             </Text>
           </Box>

@@ -182,7 +182,14 @@ export class GitCheckpointManager {
   async rollback(
     workspaceRoot: string,
     targetTurn?: number
-  ): Promise<{ restored: string[]; deleted: string[]; deletedDirs: string[]; sideEffects: string[] }> {
+  ): Promise<{
+    restored: string[];
+    deleted: string[];
+    deletedDirs: string[];
+    sideEffects: string[];
+    /** How many turns were undone: the target checkpoint and every one after it. */
+    turnsRolledBack: number;
+  }> {
     if (this.history.length === 0) {
       throw new Error("No previous snapshots found to rollback.");
     }
@@ -266,8 +273,16 @@ export class GitCheckpointManager {
       }
     }
 
+    // The target turn and everything after it are undone, so their checkpoints
+    // are consumed — a second rollback then steps one turn further back.
+    const idx = this.history.indexOf(checkpoint);
+    const removed = this.history.slice(idx);
+    const sideEffects = removed.flatMap((t) => t.sideEffects);
+    this.history = this.history.slice(0, idx);
+    if (this.currentTurn && removed.includes(this.currentTurn)) this.currentTurn = null;
+
     this.persist();
-    return { restored, deleted, deletedDirs, sideEffects: [...checkpoint.sideEffects] };
+    return { restored, deleted, deletedDirs, sideEffects, turnsRolledBack: removed.length };
   }
 }
 

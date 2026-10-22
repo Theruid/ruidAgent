@@ -1,6 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert";
-import { runAgentLoop, type LoopEvent } from "./loop.js";
+import { runAgentLoop, AgentLoopError, type LoopEvent } from "./loop.js";
+import { createDeferredPermissions } from "../permissions.js";
 import { createOpenAIProvider } from "../providers/openai.js";
 import http from "node:http";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -238,23 +239,142 @@ describe("Agent Loop Execution (loop.ts)", () => {
       // Abort after 50ms
       setTimeout(() => controller.abort(), 50);
 
-      await assert.rejects(
-        async () => {
-          await runAgentLoop({
-            provider,
-            model: "gpt-4o",
-            workspaceRoot: wsRoot,
-            initialPrompt: "long task",
-            signal: controller.signal,
-          });
-        },
-        (err: any) => err?.name === "AbortError" || String(err).includes("abort") || String(err).includes("aborted")
-      );
+      // Nothing was produced before the abort, so the caller's history comes back unchanged.
+      const prior = [{ role: "user" as const, content: [{ type: "text" as const, text: "earlier" }] }];
+      const messages = await runAgentLoop({
+        provider,
+        model: "gpt-4o",
+        workspaceRoot: wsRoot,
+        initialPrompt: "long task",
+        messages: prior,
+        signal: controller.signal,
+      });
+      assert.deepStrictEqual(messages, prior);
     } finally {
       server.close();
       try {
         rmSync(wsRoot, { recursive: true, force: true });
       } catch {}
+    }
+  });
+
+  /** Serves one scripted response per request: SSE chunks, or an HTTP status to fail with. */
+  async function scriptedServer(steps: Array<object[] | { status: number }>) {
+    let requestCount = 0;
+    const server = http.createServer((req, res) => {
+      req.on("data", () => {});
+      req.on("end", () => {
+        const step = steps[Math.min(requestCount, steps.length - 1)];
+        requestCount++;
+        if (!Array.isArray(step)) {
+          res.writeHead(step.status, { "content-type": "application/json" });
+          res.end(JSON.stringify({ error: { message: "bad request" } }));
+          return;
+        }
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        for (const c of step) res.write("data: " + JSON.stringify(c) + "\n\n");
+        res.end("data: [DONE]\n\n");
+      });
+    });
+    await new Promise<void>((r) => server.listen(0, r));
+    const address = server.address();
+    const port = typeof address === "object" && address ? address.port : 0;
+    return {
+      provider: createOpenAIProvider({ type: "openai", baseUrl: `http://localhost:${port}/v1`, apiKey: "test" }),
+      requests: () => requestCount,
+      close: () => server.close(),
+    };
+  }
+
+  const toolCallStep = (id: string, name: string, args: object) => [
+    {
+      choices: [
+        { delta: { tool_calls: [{ index: 0, id, function: { name, arguments: JSON.stringify(args) } }] } },
+      ],
+    },
+    { choices: [{ finish_reason: "tool_calls" }] },
+  ];
+
+  it("Ctrl+C during a permission prompt ends the turn and keeps its history consistent", async () => {
+    const srv = await scriptedServer([toolCallStep("call_w", "write_file", { path: "x.txt", content: "x" })]);
+    const wsRoot = mkdtempSync(join(tmpdir(), "agent-loop-perm-abort-"));
+    const perms = createDeferredPermissions(new Set(), "code");
+    const controller = new AbortController();
+    try {
+      const messages = await runAgentLoop({
+        provider: srv.provider,
+        model: "scripted",
+        workspaceRoot: wsRoot,
+        initialPrompt: "write x",
+        permissions: perms.manager,
+        signal: controller.signal,
+        onEvent: (e) => {
+          if (e.type === "permission_request") {
+            // What the TUI does on Ctrl+C.
+            controller.abort();
+            perms.cancelPending();
+          }
+        },
+      });
+
+      assert.strictEqual(srv.requests(), 1);
+      assert.deepStrictEqual(messages.map((m) => m.role), ["user", "assistant", "user", "assistant"]);
+      const result = messages[2].content[0];
+      assert.ok(result.type === "tool_result" && result.isError);
+      const note = messages[3].content[0];
+      assert.ok(note.type === "text" && note.text.includes("interrupted"));
+    } finally {
+      srv.close();
+      rmSync(wsRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("a provider error after tool work throws AgentLoopError carrying the history", async () => {
+    const srv = await scriptedServer([toolCallStep("call_r", "list_dir", { path: "." }), { status: 400 }]);
+    const wsRoot = mkdtempSync(join(tmpdir(), "agent-loop-err-"));
+    const perms = createDeferredPermissions(new Set(), "code");
+    const events: LoopEvent[] = [];
+    try {
+      const err = await runAgentLoop({
+        provider: srv.provider,
+        model: "scripted",
+        workspaceRoot: wsRoot,
+        initialPrompt: "look around",
+        permissions: perms.manager,
+        onEvent: (e) => events.push(e),
+      }).then(
+        () => null,
+        (e) => e,
+      );
+
+      assert.ok(err instanceof AgentLoopError, `expected AgentLoopError, got ${err}`);
+      assert.deepStrictEqual(err.messages.map((m: any) => m.role), ["user", "assistant", "user", "assistant"]);
+      // list_dir is auto-approved, so no approval prompt was ever shown.
+      assert.strictEqual(events.some((e) => e.type === "permission_request"), false);
+    } finally {
+      srv.close();
+      rmSync(wsRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("a provider error before any output throws a plain Error", async () => {
+    const srv = await scriptedServer([{ status: 400 }]);
+    const wsRoot = mkdtempSync(join(tmpdir(), "agent-loop-err0-"));
+    try {
+      const err = await runAgentLoop({
+        provider: srv.provider,
+        model: "scripted",
+        workspaceRoot: wsRoot,
+        initialPrompt: "hi",
+      }).then(
+        () => null,
+        (e) => e,
+      );
+      assert.ok(err instanceof Error);
+      assert.ok(!(err instanceof AgentLoopError));
+    } finally {
+      srv.close();
+      rmSync(wsRoot, { recursive: true, force: true });
     }
   });
 });

@@ -1,6 +1,6 @@
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert";
-import { mkdtempSync, rmSync, existsSync, writeFileSync, mkdirSync } from "node:fs";
+import { mkdtempSync, rmSync, existsSync, writeFileSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
@@ -11,6 +11,8 @@ import {
   saveSession,
   deleteSession,
   searchSessions,
+  loadSession,
+  getProjectStorageDir,
   type StoredSession,
 } from "./sessions.js";
 import type { LLMMessage } from "./providers/types.js";
@@ -215,5 +217,37 @@ describe("Session Schema & Migrations", () => {
     const sessions = searchSessions("");
     assert(sessions.some((s) => s.id === validId));
   });
-});
+  it("appends only new messages to the JSONL log after the first snapshot", () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "ruid-jsonl-ws-"));
+    const id = `test-jsonl-${Date.now()}`;
+    const msg = (text: string): LLMMessage => ({ role: "user", content: [{ type: "text", text }] });
+    const base = {
+      id,
+      title: "jsonl",
+      createdAt: 1000,
+      updatedAt: 1000,
+      providerName: "openai",
+      model: "gpt-4o",
+    };
+    try {
+      saveSession({ ...base, messages: [msg("one")] }, workspaceRoot);
+      saveSession({ ...base, messages: [msg("one"), msg("two"), msg("three")] }, workspaceRoot);
+      saveSession({ ...base, messages: [msg("one"), msg("two"), msg("three")] }, workspaceRoot);
 
+      const jsonl = join(getProjectStorageDir(workspaceRoot), "sessions", `${id}.jsonl`);
+      const events = readFileSync(jsonl, "utf8").trim().split("\n").map((l) => JSON.parse(l));
+      assert.strictEqual(events.length, 2);
+      assert.strictEqual(events[0].event, "session_snapshot");
+      assert.strictEqual(events[1].event, "messages_appended");
+      assert.strictEqual(events[1].from, 1);
+      assert.strictEqual(events[1].messages.length, 2);
+
+      // createdAt is whatever the caller passes; saving never rewrites it.
+      assert.strictEqual(loadSession(id, workspaceRoot)?.createdAt, 1000);
+    } finally {
+      deleteSession(id, workspaceRoot);
+      rmSync(getProjectStorageDir(workspaceRoot), { recursive: true, force: true });
+      rmSync(workspaceRoot, { recursive: true, force: true });
+    }
+  });
+});

@@ -3,6 +3,7 @@ import { Box, Text } from "ink";
 import type { AgentUIStore, PendingPermission } from "../store.js";
 import { getToolDiff, type DiffLine } from "../utils/diff.js";
 import { highlightCodeLine } from "../utils/syntax.js";
+import { permissionPreview } from "../utils/layout.js";
 
 export function PermissionPrompt({
   permission,
@@ -18,11 +19,7 @@ export function PermissionPrompt({
       ? String((permission.input as Record<string, unknown>).command || "")
       : null;
 
-  const preview = permission.argsPreview
-    ? permission.argsPreview.length > 80
-      ? permission.argsPreview.slice(0, 80) + "…"
-      : permission.argsPreview
-    : null;
+  const preview = permissionPreview(permission);
 
   return (
     <Box borderStyle="round" paddingX={1} borderColor="yellow" flexDirection="column">
@@ -52,34 +49,34 @@ export function PermissionPrompt({
           {diff.map((line, i) => {
             if (line.type === "header") {
               return (
-                <Text key={i} dimColor>
+                <Text key={i} dimColor wrap="truncate">
                   {line.text}
                 </Text>
               );
             }
             if (line.type === "del") {
               return (
-                <Text key={i} color="red">
+                <Text key={i} color="red" wrap="truncate">
                   {line.text}
                 </Text>
               );
             }
             if (line.type === "add") {
               return (
-                <Text key={i} color="green">
+                <Text key={i} color="green" wrap="truncate">
                   {line.text}
                 </Text>
               );
             }
             if (line.type === "hunk") {
               return (
-                <Text key={i} color="cyan">
+                <Text key={i} color="cyan" wrap="truncate">
                   {line.text}
                 </Text>
               );
             }
             return (
-              <Text key={i} dimColor>
+              <Text key={i} dimColor wrap="truncate">
                 {line.text}
               </Text>
             );

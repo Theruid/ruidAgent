@@ -3,7 +3,7 @@ import { render } from "ink";
 import type { LLMProvider, ProviderConfig, LLMMessage } from "../providers/types.js";
 import { isProviderUsable, loadConfig, resolveProviderModel } from "../config.js";
 import { createProvider } from "../index.js";
-import { runAgentLoop } from "../agent/loop.js";
+import { runAgentLoop, AgentLoopError } from "../agent/loop.js";
 import {
   createDeferredPermissions,
   type DeferredPermissions,
@@ -17,49 +17,16 @@ import {
   loadSession,
 } from "../sessions.js";
 
-import fs from "node:fs";
-import path from "node:path";
 import { TaskStore } from "../tools/tasks.js";
 import { SnapshotManager } from "../tools/snapshot.js";
 import { GitCheckpointManager } from "../tools/gitRollback.js";
-import { checkForUpdate, getLocalPackageInfo } from "../updater.js";
+import { checkForUpdate, getLocalPackageInfo, performUpdate } from "../updater.js";
 import { MCPClient } from "../mcp/client.js";
 import { MemoryManager } from "../memory/manager.js";
 import { SkillManager } from "../skills/loader.js";
 import type { CommandItem } from "./components/CommandPalette.js";
-
-/**
- * Scans a user prompt for `@filepath` mentions and attaches file contents if found.
- */
-function resolveAtFileMentions(prompt: string, workspaceRoot: string): string {
-  const atRegex = /@([a-zA-Z0-9_\-./\\]+\.[a-zA-Z0-9]+)/g;
-  const matches = [...prompt.matchAll(atRegex)];
-  if (matches.length === 0) return prompt;
-
-  const attachments: string[] = [];
-  const seen = new Set<string>();
-
-  for (const m of matches) {
-    const rel = m[1].replace(/\\/g, "/");
-    if (seen.has(rel)) continue;
-    seen.add(rel);
-
-    const abs = path.join(workspaceRoot, rel);
-    if (fs.existsSync(abs)) {
-      try {
-        const stat = fs.statSync(abs);
-        if (stat.isFile() && stat.size < 256 * 1024) {
-          const content = fs.readFileSync(abs, "utf8");
-          attachments.push(`\n\n--- Content of @${rel} ---\n${content}\n--- End of @${rel} ---`);
-        }
-      } catch {
-        // Skip unreadable files
-      }
-    }
-  }
-
-  return attachments.length > 0 ? `${prompt}${attachments.join("")}` : prompt;
-}
+import { resolveAtFileMentions } from "./utils/atMentions.js";
+import { popUserTurns } from "./utils/history.js";
 
 export interface TuiOptions {
   provider: LLMProvider | null;
@@ -120,26 +87,64 @@ export function startTui(options: TuiOptions): void {
   // Instantiate and connect configured MCP servers
   const mcpClients: MCPClient[] = [];
   const appConfig = loadConfig();
+  let mcpConnected = 0;
   if (appConfig.mcpServers) {
     for (const [serverName, serverCfg] of Object.entries(appConfig.mcpServers)) {
       if (serverCfg.disabled) continue;
       const client = new MCPClient(serverName, serverCfg);
       mcpClients.push(client);
+      // The status bar counts servers that actually connected, not configured ones.
       client.connect().then(() => {
-        store.setMcpServerCount(mcpClients.length);
+        store.setMcpServerCount(++mcpConnected);
       }).catch(() => {
         // Safe fallback if an external MCP server fails to connect
       });
     }
-    store.setMcpServerCount(mcpClients.length);
   }
 
   // Current conversation state
   let sessionId = newSessionId();
+  let sessionCreatedAt = Date.now();
   snapshots.attachSession(sessionId);
   gitCheckpoints.attachSession(sessionId);
   let history: LLMMessage[] = [];
   let dirty = false; // has content worth autosaving
+
+  /** Starts a fresh conversation under a new session id; the old one stays saved. */
+  function startNewSession(): void {
+    flushAutosave();
+    sessionId = newSessionId();
+    sessionCreatedAt = Date.now();
+    snapshots.attachSession(sessionId);
+    gitCheckpoints.attachSession(sessionId);
+    history = [];
+    dirty = false;
+    taskStore.clear();
+    store.setTasks([]);
+    store.clearChat();
+  }
+
+  // Leave the alternate screen even if we crash, so the user's terminal is usable.
+  let screenRestored = false;
+  const restoreScreen = (): void => {
+    if (screenRestored) return;
+    screenRestored = true;
+    process.stdout.write("\x1b[?1049l");
+  };
+  process.on("exit", restoreScreen);
+  const onFatal = (err: unknown): void => {
+    try {
+      flushAutosave();
+    } catch {}
+    try {
+      instance.unmount();
+    } catch {}
+    restoreScreen();
+    console.error(err instanceof Error ? err.stack ?? err.message : String(err));
+    process.exit(1);
+  };
+  process.on("uncaughtException", onFatal);
+  process.on("unhandledRejection", onFatal);
 
   process.stdout.write("\x1b[?1049h");
   const instance = render(
@@ -178,16 +183,20 @@ export function startTui(options: TuiOptions): void {
       client.close().catch(() => {});
     }
     instance.unmount();
-    process.stdout.write("\x1b[?1049l");
+    restoreScreen();
     process.exit(0);
+  }
+
+  /** Capabilities the active provider reports for a model, if any. */
+  function capsFor(m: string) {
+    return active?.provider?.capabilities ? active.provider.capabilities(m) : undefined;
   }
 
   function pickModel(chosenModel: string | null): void {
     store.setPhase("idle");
     if (chosenModel) {
       model = chosenModel;
-      const caps = active?.provider?.capabilities ? active.provider.capabilities(model) : undefined;
-      store.setConnection(active?.name ?? "", model, active !== null, caps);
+      store.setConnection(active?.name ?? "", model, active !== null, capsFor(model));
       store.setNotice(`Model switched to ${model}`);
     }
   }
@@ -201,6 +210,8 @@ export function startTui(options: TuiOptions): void {
 
   function abortTurn(): void {
     abortController?.abort();
+    // A turn blocked on an approval prompt would otherwise wait forever.
+    permissions.cancelPending();
   }
 
   let abortController: AbortController | null = null;
@@ -242,6 +253,10 @@ export function startTui(options: TuiOptions): void {
   }
 
   async function submitLine(raw: string): Promise<void> {
+    // The update banner is informational; the first submitted line dismisses it.
+    if (store.getState().updateInfo?.hasUpdate && raw.trim() !== "/update") {
+      store.setUpdateInfo(null);
+    }
     if (raw.startsWith("/")) {
       await handleCommand(raw);
       return;
@@ -256,10 +271,14 @@ export function startTui(options: TuiOptions): void {
   }
 
   async function runTurn(prompt: string): Promise<void> {
-    const resolvedPrompt = resolveAtFileMentions(prompt, process.cwd());
+    const { prompt: resolvedPrompt, skipped } = resolveAtFileMentions(prompt, process.cwd());
     store.addUserMessage(prompt);
     store.beginTurn();
+    if (skipped.length > 0) {
+      store.setNotice(`Not attached: ${skipped.map((s) => `@${s.path} (${s.reason})`).join(", ")}`);
+    }
     abortController = new AbortController();
+    const signal = abortController.signal;
 
     try {
       history = await runAgentLoop({
@@ -285,17 +304,26 @@ export function startTui(options: TuiOptions): void {
       flushAutosave();
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      // Drop the failed user turn so history stays consistent.
-      const last = history.at(-1);
-      if (last?.role === "user" && last.content[0]?.type === "text" && last.content[0].text === prompt) {
-        history.pop();
+      // A turn that failed after doing work keeps that work in history so the
+      // model remembers its edits; one that failed before any output leaves
+      // history untouched.
+      if (e instanceof AgentLoopError) {
+        history = e.messages;
+        dirty = true;
+        flushAutosave();
       }
-      store.endTurn(null, `Error: ${msg}`);
       abortController = null;
+      if (signal.aborted) {
+        store.endTurn(null);
+        store.setNotice("Turn interrupted.");
+      } else {
+        store.endTurn(null, `Error: ${msg}`);
+      }
       return;
     }
     abortController = null;
     store.endTurn(history);
+    if (signal.aborted) store.setNotice("Turn interrupted — finished steps are kept in the conversation.");
   }
 
   /** Called by App-level key routing when a permission is pending. */
@@ -308,7 +336,7 @@ export function startTui(options: TuiOptions): void {
     saveSession({
       id: sessionId,
       title: titleFromMessages(history),
-      createdAt: Date.now(),
+      createdAt: sessionCreatedAt,
       updatedAt: Date.now(),
       providerName: active?.name ?? "?",
       model: model ?? "?",
@@ -328,6 +356,7 @@ export function startTui(options: TuiOptions): void {
     }
     flushAutosave();
     sessionId = sess.id;
+    sessionCreatedAt = sess.createdAt;
     snapshots.attachSession(sessionId);
     gitCheckpoints.attachSession(sessionId);
     history = sess.messages;
@@ -345,7 +374,7 @@ export function startTui(options: TuiOptions): void {
     }
     if (model !== sess.model && sess.model !== "?") {
       model = sess.model;
-      store.setConnection(active?.name ?? "", model, active !== null);
+      store.setConnection(active?.name ?? "", model, active !== null, capsFor(model));
     }
     store.setNotice(`Resumed "${sess.title}"`);
   }
@@ -359,15 +388,7 @@ export function startTui(options: TuiOptions): void {
         break;
 
       case "new":
-        flushAutosave();
-        sessionId = newSessionId();
-        snapshots.attachSession(sessionId);
-        gitCheckpoints.attachSession(sessionId);
-        history = [];
-        dirty = false;
-        taskStore.clear();
-        store.setTasks([]);
-        store.clearChat();
+        startNewSession();
         store.setNotice("New chat started.");
         break;
 
@@ -401,18 +422,15 @@ export function startTui(options: TuiOptions): void {
       }
 
       case "clear":
-        history = [];
-        dirty = false;
-        taskStore.clear();
-        store.setTasks([]);
-        store.clearChat();
-        store.setNotice("History cleared.");
+        // A fresh session id: reusing the old one would overwrite its saved transcript.
+        startNewSession();
+        store.setNotice("History cleared. The previous conversation is still in /resume.");
         break;
 
       case "model":
         if (rest[0]) {
           model = rest[0];
-          store.setConnection(active?.name ?? "", model, active !== null);
+          store.setConnection(active?.name ?? "", model, active !== null, capsFor(model));
           store.setNotice(`Model set to ${model}`);
         } else {
           if (!active) {
@@ -492,20 +510,16 @@ export function startTui(options: TuiOptions): void {
       case "rollback": {
         const turnNum = rest[0] ? parseInt(rest[0], 10) : undefined;
         try {
-          const { restored, deleted, deletedDirs } = await gitCheckpoints.rollback(process.cwd(), turnNum);
-
-          // Find and pop the last user prompt turn from history
-          let lastUserPrompt = "";
-          while (history.length > 0) {
-            const popped = history.pop();
-            if (popped?.role === "user") {
-              const textContent = popped.content.find((c) => c.type === "text");
-              if (textContent && textContent.type === "text") {
-                lastUserPrompt = textContent.text;
-                break;
-              }
-            }
+          if (store.getState().phase === "running") {
+            store.setNotice("Wait for the current turn to finish (or Ctrl+C) before rolling back.");
+            break;
           }
+          const { restored, deleted, deletedDirs, turnsRolledBack } = await gitCheckpoints.rollback(process.cwd(), turnNum);
+
+          // Drop as many conversation turns as the files were rolled back.
+          const lastUserPrompt = popUserTurns(history, turnsRolledBack);
+          dirty = true;
+          flushAutosave();
 
           // Reload UI view rows
           store.loadMessages(toViewMessages(history));
@@ -517,10 +531,11 @@ export function startTui(options: TuiOptions): void {
           if (restored.length > 0) fileSummary.push(`Restored: ${restored.join(", ")}`);
           if (deleted.length > 0) fileSummary.push(`Removed files: ${deleted.join(", ")}`);
           if (deletedDirs && deletedDirs.length > 0) fileSummary.push(`Removed directories: ${deletedDirs.join(", ")}`);
+          const turnsStr = `${turnsRolledBack} turn${turnsRolledBack === 1 ? "" : "s"}`;
           if (fileSummary.length === 0) {
-            store.setNotice("Rolled back conversation turn (no disk changes to revert).");
+            store.setNotice(`Rolled back ${turnsStr} (no disk changes to revert).`);
           } else {
-            store.setNotice(`Rolled back — ${fileSummary.join("; ")}`);
+            store.setNotice(`Rolled back ${turnsStr} — ${fileSummary.join("; ")}`);
           }
         } catch (err: any) {
           store.setNotice(`Rollback failed: ${err.message}`);
@@ -599,8 +614,25 @@ export function startTui(options: TuiOptions): void {
         break;
       }
 
+      case "update": {
+        const info = store.getState().updateInfo;
+        if (!info?.hasUpdate) {
+          store.setNotice("No update pending.");
+          break;
+        }
+        store.setNotice(`Updating ${info.packageName} via npm…`);
+        const res = await performUpdate(info.packageName);
+        store.setUpdateInfo(null);
+        store.setNotice(
+          res.success
+            ? `✓ Updated to v${info.latestVersion}. Restart ruid to use it.`
+            : `✖ Update failed: ${res.output.slice(0, 120)}`,
+        );
+        break;
+      }
+
       case "help":
-        store.setNotice("/new /resume /sessions /setup /mcp /skills /memory /remember /providers /connect <name> /model <id> /mode <code|plan|auto> /rollback /tasks /version /clear /exit");
+        store.setNotice("/new /resume /sessions /setup /mcp /skills /memory /remember /providers /connect <name> /model <id> /mode <code|plan|auto> /think /tasks /plan /hooks /rollback [turn] /update /version /clear /exit");
         break;
 
       default: {
@@ -610,14 +642,25 @@ export function startTui(options: TuiOptions): void {
           const argsStr = rest.join(" ");
           const renderedPrompt = skillManager.renderSkill(skill, argsStr);
 
-          // If skill explicitly requests a mode, apply it
-          if (skill.mode && skill.mode !== store.getState().mode) {
-            store.setMode(skill.mode);
-            permissions.setMode(skill.mode);
+          // A skill may run in its own mode; switch for this turn only.
+          const previousMode = store.getState().mode;
+          const switchMode = skill.mode && skill.mode !== previousMode ? skill.mode : null;
+          if (switchMode) {
+            store.setMode(switchMode);
+            permissions.setMode(switchMode);
           }
 
-          store.setNotice(`Executing skill: /${skill.name}`);
-          await runTurn(renderedPrompt);
+          store.setNotice(
+            `Executing skill: /${skill.name}${switchMode ? ` in [${switchMode.toUpperCase()}] mode` : ""}`,
+          );
+          try {
+            await runTurn(renderedPrompt);
+          } finally {
+            if (switchMode && store.getState().mode === switchMode) {
+              store.setMode(previousMode);
+              permissions.setMode(previousMode);
+            }
+          }
           break;
         }
 

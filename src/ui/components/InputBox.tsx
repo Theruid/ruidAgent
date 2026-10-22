@@ -3,6 +3,20 @@ import { Box, Text, useInput } from "ink";
 import { CommandPalette, COMMANDS, type CommandItem } from "./CommandPalette.js";
 import { FilePalette } from "./FilePalette.js";
 import { listWorkspaceFiles, searchFiles } from "../utils/fileSearch.js";
+import { inputBoxRows } from "../utils/layout.js";
+
+/**
+ * Turns a raw input chunk into text to insert. Pastes arrive as one chunk;
+ * their line breaks are kept (normalized to \n) while other control
+ * characters are dropped.
+ */
+export function printableInput(input: string): string {
+  const keepNewlines = input.length > 1;
+  const normalized = keepNewlines ? input.replace(/\r\n?/g, "\n") : input;
+  return keepNewlines
+    ? normalized.replace(/[\x00-\x09\x0b-\x1f\x7f]/g, (c) => (c === "\t" ? "  " : ""))
+    : normalized.replace(/[\r\n\x00-\x08\x0b-\x1f\x7f]/g, "");
+}
 
 export interface InputBoxProps {
   onSubmit(line: string): void;
@@ -10,12 +24,15 @@ export interface InputBoxProps {
   placeholder: string;
   initialValue?: string;
   customCommands?: CommandItem[];
-  onPaletteChange?(isOpen: boolean): void;
+  /** Submitted prompts, oldest first. Owned by the caller so it outlives this component. */
+  history?: string[];
+  /** Terminal width, used to report the box's rendered height. */
+  columns?: number;
+  /** Receives the rendered height (palette included) whenever it changes. */
+  onHeightChange?(rows: number): void;
   onCycleMode?(): void;
   onScrollUp?(): void;
   onScrollDown?(): void;
-  onScrollPageUp?(): void;
-  onScrollPageDown?(): void;
   onScrollToBottom?(): void;
 }
 
@@ -25,19 +42,21 @@ export function InputBox({
   placeholder,
   initialValue,
   customCommands = [],
-  onPaletteChange,
+  history: historyProp,
+  columns = 80,
+  onHeightChange,
   onCycleMode,
   onScrollUp,
   onScrollDown,
-  onScrollPageUp,
-  onScrollPageDown,
   onScrollToBottom,
 }: InputBoxProps) {
   const [value, setValue] = useState(initialValue ?? "");
   const [selectedCmdIdx, setSelectedCmdIdx] = useState(0);
   const [selectedFileIdx, setSelectedFileIdx] = useState(0);
   const [showPalette, setShowPalette] = useState(false);
-  const history = useRef<string[]>([]);
+  // The caller's array is stable (it lives on the store), so remounting after
+  // a picker keeps the prompt history.
+  const history = useRef<string[]>(historyProp ?? []);
   const histIdx = useRef(-1);
   const draft = useRef("");
 
@@ -80,22 +99,22 @@ export function InputBox({
   const matchingFiles = atQuery !== null ? searchFiles(workspaceFiles, atQuery) : [];
   const shouldShowFilePalette = atQuery !== null && !showPalette;
 
-  const isPaletteOpen = shouldShowCmdPalette || shouldShowFilePalette;
+  const height = inputBoxRows(
+    value,
+    columns,
+    shouldShowCmdPalette ? "command" : shouldShowFilePalette ? "file" : null,
+    shouldShowCmdPalette ? matchingCmds.length : matchingFiles.length,
+  );
   useEffect(() => {
-    onPaletteChange?.(isPaletteOpen);
-  }, [isPaletteOpen, onPaletteChange]);
+    onHeightChange?.(height);
+  }, [height, onHeightChange]);
 
   useInput(
     (input, key) => {
-      // 1. PageUp / PageDown for scrolling chat
-      if (key.pageUp) {
-        onScrollPageUp?.();
-        return;
-      }
-      if (key.pageDown) {
-        onScrollPageDown?.();
-        return;
-      }
+      // 1. PageUp/PageDown, Home/End and Ctrl+arrows scroll the transcript;
+      // App handles them globally (Ink delivers keys to every handler).
+      if (key.pageUp || key.pageDown || key.home || key.end) return;
+      if (key.ctrl && (key.upArrow || key.downArrow)) return;
 
       // 2. Tab key: autocomplete slash command, file mention, OR cycle modes
       if (key.tab) {
@@ -286,8 +305,7 @@ export function InputBox({
       // Ignore other control/escape codes
       if (key.ctrl || key.meta) return;
 
-      // Filter out raw newlines/carriage returns here since key.return handles them above
-      const printable = input.replace(/[\r\n\x00-\x08\x0b-\x1f\x7f]/g, "");
+      const printable = printableInput(input);
       if (!printable) return;
 
       // Regular text entry

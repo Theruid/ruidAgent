@@ -55,6 +55,42 @@ describe("AgentUIStore & State Transitions (store.ts)", () => {
     assert.strictEqual(store.getState().scrollOffset, 0);
   });
 
+  it("never scrolls past the top once the message list reports its range", () => {
+    const store = new AgentUIStore("openai", "gpt-4o", true);
+    store.setMaxScroll(12);
+    store.scrollUp(10);
+    store.scrollUp(10);
+    assert.strictEqual(store.getState().scrollOffset, 12);
+    store.scrollDown(5);
+    assert.strictEqual(store.getState().scrollOffset, 7);
+
+    store.scrollToTop();
+    assert.strictEqual(store.getState().scrollOffset, 12);
+
+    // Content shrinking below the current offset pulls it back in range.
+    store.setMaxScroll(4);
+    assert.strictEqual(store.getState().scrollOffset, 4);
+  });
+
+  it("pairs parallel results of the same tool with their own rows by call id", () => {
+    const store = new AgentUIStore("openai", "gpt-4o", true);
+    store.beginTurn();
+    store.applyLoopEvent({ type: "tool_start", name: "read_file", input: { path: "a.ts" }, toolCallId: "c1" });
+    store.applyLoopEvent({ type: "tool_start", name: "read_file", input: { path: "b.ts" }, toolCallId: "c2" });
+    // Results arrive in the opposite order.
+    store.applyLoopEvent({ type: "tool_result", name: "read_file", content: "B contents", isError: false, toolCallId: "c2" });
+    store.applyLoopEvent({ type: "tool_result", name: "read_file", content: "A failed", isError: true, toolCallId: "c1" });
+
+    const rows = store.getState().messages.filter((m) => m.kind === "tool");
+    const a = rows.find((m) => m.toolMeta?.input?.path === "a.ts");
+    const b = rows.find((m) => m.toolMeta?.input?.path === "b.ts");
+    assert.strictEqual(a?.text, "A failed");
+    assert.strictEqual(a?.toolError, true);
+    assert.strictEqual(b?.text, "B contents");
+    assert.strictEqual(b?.toolError, false);
+    assert.ok(rows.every((m) => !m.pending));
+  });
+
   it("tracks streaming text, thought deltas, and commits assistant rows", () => {
     const store = new AgentUIStore("anthropic", "claude-sonnet-4", true);
 
@@ -186,7 +222,25 @@ describe("AgentUIStore & State Transitions (store.ts)", () => {
     assert.strictEqual(usage.cacheCreationInputTokens, 200);
     assert.strictEqual(usage.cacheReadInputTokens, 300);
     assert.ok(usage.totalCost > 0);
+    assert.strictEqual(usage.contextTokens, 1000);
     assert.strictEqual(store.getState().lastTurnDurationMs, 800);
+  });
+
+  it("uses the latest request for context size and prices each request at its own model", () => {
+    const store = new AgentUIStore("anthropic", "claude-opus-5", true);
+    store.applyLoopEvent({ type: "usage", inputTokens: 1_000_000, outputTokens: 0 });
+    const opusCost = store.getState().sessionUsage.totalCost;
+    assert.strictEqual(opusCost, 15);
+
+    store.setConnection("anthropic", "claude-haiku-4-5", true);
+    store.applyLoopEvent({ type: "usage", inputTokens: 40_000, outputTokens: 0 });
+
+    const usage = store.getState().sessionUsage;
+    assert.strictEqual(usage.inputTokens, 1_040_000);
+    // Context is the size of the last prompt, not the session total.
+    assert.strictEqual(usage.contextTokens, 40_000);
+    // The earlier Opus request is not repriced at Haiku rates.
+    assert.ok(Math.abs(usage.totalCost - (15 + 0.04 * 0.8)) < 1e-9);
   });
 
   it("tracks live activity so the UI shows progress before the first token", () => {

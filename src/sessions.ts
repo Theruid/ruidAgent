@@ -99,13 +99,26 @@ export function saveSession(
   writeFileSync(tempFile, serialized, "utf8");
   renameSync(tempFile, targetFile);
 
-  // Also append to JSONL session event log
+  // Also append to the JSONL session event log. A full snapshot is written
+  // once per process (or after history shrinks, e.g. rollback); later saves
+  // append only the new messages so the log grows linearly, not quadratically.
   const jsonlFile = join(dir, `${fullSession.id}.jsonl`);
-  const eventLine = JSON.stringify({ ts: Date.now(), event: "session_snapshot", session: fullSession }) + "\n";
+  const logged = loggedMessageCounts.get(targetFile);
+  const count = fullSession.messages.length;
+  const event =
+    logged !== undefined && count >= logged
+      ? count === logged
+        ? null
+        : { ts: Date.now(), event: "messages_appended", from: logged, messages: fullSession.messages.slice(logged) }
+      : { ts: Date.now(), event: "session_snapshot", session: fullSession };
   try {
-    appendFileSync(jsonlFile, redactSecrets(eventLine), "utf8");
+    if (event) appendFileSync(jsonlFile, redactSecrets(JSON.stringify(event) + "\n"), "utf8");
+    loggedMessageCounts.set(targetFile, count);
   } catch {}
 }
+
+/** Messages already written to each session's JSONL log in this process, keyed by session file. */
+const loggedMessageCounts = new Map<string, number>();
 
 export function deleteSession(id: string, workspaceRoot: string = process.cwd()): void {
   const dir = sessionsDir(workspaceRoot);

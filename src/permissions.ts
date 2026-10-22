@@ -11,11 +11,15 @@ export interface PermissionManager {
   getMode(): AgentMode;
   setMode(mode: AgentMode): void;
   classifyRisk(toolName: string, input: unknown): RiskTier;
+  /** True when check() would block on the user; lets callers skip showing a prompt for auto-decided calls. */
+  wouldPrompt?(toolName: string, input: unknown): boolean;
 }
 
 export interface DeferredPermissions {
   manager: PermissionManager;
   respond(answer: "y" | "n" | "a"): void;
+  /** Rejects the prompt currently awaiting an answer (e.g. when the turn is aborted). */
+  cancelPending(): void;
   isPending(): boolean;
   currentTool(): string | null;
   getMode(): AgentMode;
@@ -300,91 +304,41 @@ export function createDeferredPermissions(
   let currentMode: AgentMode = initialMode;
   let pending: { toolName: string; resolve: (ok: boolean) => void } | null = null;
 
+  /** What check() will do for this call, without side effects. */
+  function decide(toolName: string, tier: RiskTier): "allow" | "deny" | "prompt" {
+    if (currentMode === "auto") return tier === 4 ? "prompt" : "allow";
+    // Plan mode: allow read-only (Tier 0 and Tier 2 safe bash), deny mutating
+    if (currentMode === "plan") return tier === 0 || tier === 2 ? "allow" : "deny";
+    // Code mode: Tier 0 and Tier 2 safe bash are auto-approved, then the session whitelist
+    if (tier === 0 || tier === 2) return "allow";
+    if (approved.has(toolName) && tier < 4) return "allow";
+    return "prompt";
+  }
+
   return {
     manager: {
       classifyRisk(toolName: string, input: unknown): RiskTier {
         return classifyToolRisk(toolName, input);
       },
 
+      wouldPrompt(toolName: string, input: unknown): boolean {
+        return decide(toolName, classifyToolRisk(toolName, input)) === "prompt";
+      },
+
       async check(toolName: string, input: unknown, source: "direct" | "subagent" | "background" | "mcp" = "direct"): Promise<boolean> {
         const tier = classifyToolRisk(toolName, input);
+        const decision = decide(toolName, tier);
 
-        // 1. Auto mode: approve everything except Tier 4 sensitive items
-        if (currentMode === "auto") {
-          if (tier === 4) {
-            const ok = await new Promise<boolean>((resolve) => {
-              pending = { toolName, resolve };
-            });
-            logAudit({
-              ts: Date.now(),
-              source,
-              tool: toolName,
-              args: input,
-              tier,
-              decision: ok ? "allowed" : "denied",
-            });
-            return ok;
-          }
+        if (decision !== "prompt") {
           logAudit({
             ts: Date.now(),
             source,
             tool: toolName,
             args: input,
             tier,
-            decision: "auto_approved",
+            decision: decision === "allow" ? "auto_approved" : "denied",
           });
-          return true;
-        }
-
-        // 2. Plan mode: allow read-only (Tier 0 and Tier 2 safe bash), deny mutating
-        if (currentMode === "plan") {
-          if (tier === 0 || tier === 2) {
-            logAudit({
-              ts: Date.now(),
-              source,
-              tool: toolName,
-              args: input,
-              tier,
-              decision: "auto_approved",
-            });
-            return true;
-          }
-          logAudit({
-            ts: Date.now(),
-            source,
-            tool: toolName,
-            args: input,
-            tier,
-            decision: "denied",
-          });
-          return false;
-        }
-
-        // 3. Code mode:
-        // Tier 0 and Tier 2 safe bash are auto-approved
-        if (tier === 0 || tier === 2) {
-          logAudit({
-            ts: Date.now(),
-            source,
-            tool: toolName,
-            args: input,
-            tier,
-            decision: "auto_approved",
-          });
-          return true;
-        }
-
-        // Check if session whitelisted
-        if (approved.has(toolName) && tier < 4) {
-          logAudit({
-            ts: Date.now(),
-            source,
-            tool: toolName,
-            args: input,
-            tier,
-            decision: "auto_approved",
-          });
-          return true;
+          return decision === "allow";
         }
 
         // Prompt user
@@ -419,6 +373,13 @@ export function createDeferredPermissions(
       if (answer === "a") approved.add(toolName);
       pending = null;
       resolve(answer === "y" || answer === "a");
+    },
+
+    cancelPending(): void {
+      if (!pending) return;
+      const { resolve } = pending;
+      pending = null;
+      resolve(false);
     },
 
     isPending(): boolean {

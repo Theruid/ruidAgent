@@ -25,6 +25,7 @@ export const COMMANDS: CommandItem[] = [
   { name: "/model", args: "[id]", description: "Browse, search & switch models interactively" },
   { name: "/clear", description: "Clear current conversation history" },
   { name: "/version", description: "Show current ruid version" },
+  { name: "/update", description: "Install the newer ruid release from npm" },
   { name: "/help", description: "Show available commands" },
   { name: "/exit", description: "Exit ruid" },
 ];

@@ -27,7 +27,7 @@ export function UpdatePrompt({
           <Text color="yellow">{status}</Text>
         ) : (
           <Text>
-            A new version of <Text bold>{info.packageName}</Text> is available on npm. Update now? (<Text bold color="green">y</Text>/<Text bold color="red">n</Text>)
+            A new version of <Text bold>{info.packageName}</Text> is available on npm. Run <Text bold color="green">/update</Text> to install; sending anything else dismisses this.
           </Text>
         )}
       </Box>

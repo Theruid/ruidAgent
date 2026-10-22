@@ -114,4 +114,34 @@ describe("Git Checkpoint & Rollback Engine", () => {
     assert.strictEqual(existsSync(join(folder, "deploy.sh")), false);
     assert.strictEqual(existsSync(folder), false);
   });
+  it("consumes checkpoints so repeated rollbacks step further back", async () => {
+    await checkpoints.beginTurn(tmpDir);
+    writeFileSync(join(tmpDir, "one.txt"), "turn 1\n", "utf8");
+    await checkpoints.beginTurn(tmpDir);
+    writeFileSync(join(tmpDir, "two.txt"), "turn 2\n", "utf8");
+
+    const first = await checkpoints.rollback(tmpDir);
+    assert.strictEqual(first.turnsRolledBack, 1);
+    assert.strictEqual(existsSync(join(tmpDir, "two.txt")), false);
+    assert.strictEqual(existsSync(join(tmpDir, "one.txt")), true);
+
+    const second = await checkpoints.rollback(tmpDir);
+    assert.strictEqual(second.turnsRolledBack, 1);
+    assert.strictEqual(existsSync(join(tmpDir, "one.txt")), false);
+
+    await assert.rejects(() => checkpoints.rollback(tmpDir), /No previous snapshots/);
+  });
+
+  it("rolling back to an earlier turn undoes every turn after it", async () => {
+    await checkpoints.beginTurn(tmpDir); // turn 1
+    writeFileSync(join(tmpDir, "one.txt"), "turn 1\n", "utf8");
+    await checkpoints.beginTurn(tmpDir); // turn 2
+    writeFileSync(join(tmpDir, "two.txt"), "turn 2\n", "utf8");
+    await checkpoints.beginTurn(tmpDir); // turn 3
+
+    const res = await checkpoints.rollback(tmpDir, 2);
+    assert.strictEqual(res.turnsRolledBack, 2);
+    assert.strictEqual(existsSync(join(tmpDir, "two.txt")), false);
+    assert.strictEqual(existsSync(join(tmpDir, "one.txt")), true);
+  });
 });

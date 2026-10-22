@@ -3,7 +3,7 @@ import { Box, Text } from "ink";
 import type { SessionUsage } from "../store.js";
 import type { AgentMode } from "../../permissions.js";
 import type { ModelCapabilities } from "../../providers/types.js";
-import { formatTokenCount, formatCost, formatLatency } from "../utils/pricing.js";
+import { formatTokenCount, formatCost, formatLatency, hasKnownPricing } from "../utils/pricing.js";
 
 export function StatusBar({
   providerName,
@@ -36,7 +36,8 @@ export function StatusBar({
   const inStr = usage ? formatTokenCount(usage.inputTokens) : "0";
   const cachedStr = usage?.cacheReadInputTokens ? ` (${formatTokenCount(usage.cacheReadInputTokens)} cached)` : "";
   const outStr = usage ? formatTokenCount(usage.outputTokens) : "0";
-  const costStr = usage ? formatCost(usage.totalCost) : "$0.00";
+  // Unknown models (local or custom endpoints) have no price table entry.
+  const costStr = hasKnownPricing(model) || (usage?.totalCost ?? 0) > 0 ? ` · ${formatCost(usage?.totalCost ?? 0)}` : "";
   const latencyStr = lastTurnLatencyMs ? formatLatency(lastTurnLatencyMs) : null;
 
   let modeColor = "cyan";
@@ -56,7 +57,7 @@ export function StatusBar({
     : "";
 
   const contextLimit = capabilities?.contextWindow ?? 128_000;
-  const currentTokens = usage?.inputTokens ?? 0;
+  const currentTokens = usage?.contextTokens ?? 0;
   const contextPct = Math.min(100, Math.round((currentTokens / contextLimit) * 100));
   const contextColor = contextPct > 85 ? "red" : contextPct > 70 ? "yellow" : "cyan";
   const contextStr = currentTokens > 0 ? ` · ctx ${contextPct}%` : "";
@@ -87,7 +88,7 @@ export function StatusBar({
       {hasUsage && (
         <Box>
           <Text dimColor>
-            {inStr} in{cachedStr} · {outStr} out · {costStr}
+            {inStr} in{cachedStr} · {outStr} out{costStr}
             {latencyStr ? ` · ${latencyStr}` : ""}
           </Text>
         </Box>

@@ -12,8 +12,9 @@ import { ModelPicker } from "./components/ModelPicker.js";
 import { ProviderPicker } from "./components/ProviderPicker.js";
 import { TaskPanel } from "./components/TaskPanel.js";
 import { UpdatePrompt } from "./components/UpdatePrompt.js";
-import { performUpdate, getLocalPackageInfo } from "../updater.js";
+import { getLocalPackageInfo } from "../updater.js";
 import { loadConfig } from "../config.js";
+import { permissionPromptRows, taskPanelRows, textRows, UPDATE_PROMPT_ROWS } from "./utils/layout.js";
 
 /** Terminal dimensions with resize tracking. */
 function useTerminalDimensions(): { rows: number; columns: number } {
@@ -69,41 +70,11 @@ export function App({
   const state: UIState = useSyncExternalStore(store.subscribe, store.getState);
   const { rows, columns } = useTerminalDimensions();
   const exitIntent = useRef<number>(0);
-  const [updateStatus, setUpdateStatus] = useState<string | null>(null);
-  const [paletteOpen, setPaletteOpen] = useState(false);
-  const updating = useRef(false);
+  const [inputRows, setInputRows] = useState(3);
 
   // Global key routing.
   useInput((input, key) => {
-    // 1. Update Prompt handling (when update is available)
-    if (state.updateInfo?.hasUpdate && !key.ctrl) {
-      if (updating.current) return;
-      const lower = input.toLowerCase().trim();
-      if (lower === "y") {
-        updating.current = true;
-        setUpdateStatus(`Updating ${state.updateInfo.packageName} via npm…`);
-        performUpdate(state.updateInfo.packageName).then((res) => {
-          if (res.success) {
-            setUpdateStatus(`✓ Updated to v${state.updateInfo?.latestVersion}! Please restart ruid.`);
-            setTimeout(() => {
-              store.setUpdateInfo(null);
-            }, 3500);
-          } else {
-            setUpdateStatus(`✖ Update failed: ${res.output.slice(0, 120)}`);
-            setTimeout(() => {
-              store.setUpdateInfo(null);
-            }, 4500);
-          }
-        });
-        return;
-      }
-      if (lower === "n" || lower === " " || key.escape || key.return) {
-        store.setUpdateInfo(null);
-        return;
-      }
-    }
-
-    // 2. Permission Prompt handling
+    // 1. Permission Prompt handling
     if (state.pendingPermission && store.respondPermission && !key.ctrl) {
       const lower = input.toLowerCase();
       if (lower === "y" || lower === "n" || lower === "a") {
@@ -112,7 +83,15 @@ export function App({
       }
     }
 
-    // 3. Global Scrolling Keys (PageUp / PageDown / Home / End)
+    // 2. Global Scrolling Keys (PageUp / PageDown / Home / End)
+    if (key.home) {
+      store.scrollToTop();
+      return;
+    }
+    if (key.end) {
+      store.scrollToBottom();
+      return;
+    }
     if (key.pageUp) {
       store.scrollUp(Math.max(3, Math.floor(rows / 2)));
       return;
@@ -130,7 +109,7 @@ export function App({
       return;
     }
 
-    // 4. Ctrl+C handler
+    // 3. Ctrl+C handler
     if (key.ctrl && input === "c") {
       if (state.phase === "running") {
         onAbortTurn();
@@ -149,36 +128,20 @@ export function App({
 
   const showWelcome = state.messages.length === 0 && !state.streamingText && state.tasks.length === 0;
 
-  // Calculate remaining height for MessageList
+  // Calculate remaining height for MessageList: every panel below it reports
+  // its real rendered height (see utils/layout.ts).
   let overhead = 1; // StatusBar (1 line)
   if (state.phase === "picker" || state.phase === "wizard") {
     overhead += 10;
   } else if (state.phase === "model-picker" || state.phase === "provider-picker") {
     overhead += 16;
   } else {
-    // InputBox: border (2 lines) + content lines
-    const inputLines = state.inputDraft ? state.inputDraft.split("\n").length : 1;
-    overhead += Math.max(3, inputLines + 2);
-    if (paletteOpen) {
-      overhead += 9;
-    }
+    overhead += inputRows;
   }
-  if (state.notice) overhead += 1;
-  if (state.pendingPermission) {
-    overhead += 8;
-  }
-  if (state.tasks.length > 0) {
-    const isCompleted = state.tasks.every((t) => t.status === "completed");
-    if (isCompleted) {
-      overhead += 3;
-    } else {
-      const visibleCount = Math.min(5, state.tasks.length);
-      const hasAbove = state.tasks.length > 5;
-      const hasBelow = state.tasks.length > 5;
-      // header (1) + border (2) + margin (1) + visible tasks + indicators
-      overhead += 4 + visibleCount + (hasAbove ? 1 : 0) + (hasBelow ? 1 : 0);
-    }
-  }
+  if (state.notice) overhead += textRows(state.notice, columns - 3);
+  if (state.pendingPermission) overhead += permissionPromptRows(state.pendingPermission, columns);
+  if (state.updateInfo?.hasUpdate) overhead += UPDATE_PROMPT_ROWS;
+  overhead += taskPanelRows(state.tasks);
 
   const viewportHeight = Math.max(5, rows - overhead);
   // Reloading config reads from disk; only do it when the target provider could
@@ -207,6 +170,7 @@ export function App({
             activeAction={state.activeAction}
             turnStartedAt={state.turnStartedAt}
             paused={Boolean(state.pendingPermission)}
+            onMaxScrollChange={store.setMaxScroll}
           />
         )}
       </Box>
@@ -214,7 +178,7 @@ export function App({
       {state.tasks.length > 0 && <TaskPanel tasks={state.tasks} />}
 
       {state.updateInfo?.hasUpdate && (
-        <UpdatePrompt info={state.updateInfo} status={updateStatus} />
+        <UpdatePrompt info={state.updateInfo} status={null} />
       )}
 
       {state.notice && (
@@ -246,15 +210,15 @@ export function App({
       ) : (
         <InputBox
           onSubmit={onSubmit}
-          disabled={state.phase === "running" || Boolean(state.pendingPermission) || Boolean(state.updateInfo?.hasUpdate)}
+          disabled={state.phase === "running" || Boolean(state.pendingPermission)}
           initialValue={state.inputDraft}
           customCommands={state.customSkills.length > 0 ? state.customSkills : customCommands}
-          onPaletteChange={setPaletteOpen}
+          history={store.promptHistory}
+          columns={columns}
+          onHeightChange={setInputRows}
           onCycleMode={onCycleMode}
           onScrollUp={() => store.scrollUp(2)}
           onScrollDown={() => store.scrollDown(2)}
-          onScrollPageUp={() => store.scrollUp(Math.max(4, Math.floor(rows / 2)))}
-          onScrollPageDown={() => store.scrollDown(Math.max(4, Math.floor(rows / 2)))}
           onScrollToBottom={() => store.scrollToBottom()}
           placeholder={
             !state.connected

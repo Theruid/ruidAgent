@@ -59,6 +59,7 @@ export type StreamEvent =
   | { type: "error"; message: string };
 
 export interface Usage {
+  /** Total prompt tokens for the request, including cache reads and cache writes. */
   inputTokens: number;
   outputTokens: number;
   cacheCreationInputTokens?: number;

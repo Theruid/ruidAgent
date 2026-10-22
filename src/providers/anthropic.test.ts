@@ -66,4 +66,24 @@ describe("Anthropic Adapter & Stream Parsing", () => {
     assert.strictEqual(caps.supportsPromptCaching, true);
     assert.strictEqual(caps.contextWindow, 200_000);
   });
+  it("reports input tokens as the full prompt size, cache reads and writes included", async () => {
+    const sseChunks = [
+      'event: message_start\ndata: {"type":"message_start","message":{"usage":{"input_tokens":20,"cache_read_input_tokens":3000,"cache_creation_input_tokens":500}}}\n\n',
+      'event: message_delta\ndata: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":7}}\n\n',
+    ];
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (const chunk of sseChunks) controller.enqueue(new TextEncoder().encode(chunk));
+        controller.close();
+      },
+    });
+    const events = [];
+    for await (const event of parseStream(stream)) events.push(event);
+    const done = events.find((e) => e.type === "message_delta");
+    assert.ok(done && done.type === "message_delta");
+    assert.strictEqual(done.usage?.inputTokens, 3520);
+    assert.strictEqual(done.usage?.cacheReadInputTokens, 3000);
+    assert.strictEqual(done.usage?.cacheCreationInputTokens, 500);
+    assert.strictEqual(done.usage?.outputTokens, 7);
+  });
 });
